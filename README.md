@@ -1,5 +1,8 @@
 # CC Adapter
 
+[![PyPI Version](https://img.shields.io/pypi/v/cc-adapter)](https://pypi.org/project/cc-adapter/)
+[![Monthly Downloads](https://img.shields.io/badge/dynamic/json?url=https://pypistats.org/api/packages/cc-adapter/recent&query=data.last_month&label=downloads/month)](https://pypistats.org/packages/cc-adapter)
+
 Claude Code-compatible adapter bridging Anthropic `/v1/messages` to LM Studio, Poe, or OpenRouter and back. Streaming, tool calls, and cache-control passthrough are supported.
 
 ## Install from PyPI (recommended)
@@ -9,7 +12,7 @@ Quickest way to get cc-adapter.
 uv tool install cc-adapter
 ```
 
-### Install from source
+## Install from source
 Clone and set up a local dev environment.
 
 ```bash
