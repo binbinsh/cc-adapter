@@ -1,0 +1,82 @@
+name: Auto tag on version change
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    env:
+      PAT: ${{ secrets.REPO_PAT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.REPO_PAT }}
+
+      - name: Read version
+        id: get_version
+        shell: bash
+        run: |
+          VERSION=$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          data = tomllib.loads(Path("pyproject.toml").read_text())
+          print(data.get("project", {}).get("version", ""))
+          PY
+          )
+          if [ -z "$VERSION" ]; then
+            echo "Version not found in pyproject.toml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          TAG="v${{ steps.get_version.outputs.version }}"
+          if git ls-remote --tags origin "$TAG" | grep "$TAG" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          TAG: v${{ steps.get_version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          if [ -z "$PAT" ]; then
+            echo "Missing PAT (REPO_PAT secret)."
+            exit 1
+          fi
+          git push https://x-access-token:${PAT}@github.com/${{ github.repository }} "$TAG"
+
+      - name: Trigger publish workflow
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          TAG: v${{ steps.get_version.outputs.version }}
+          PAT: ${{ secrets.REPO_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "Missing PAT (REPO_PAT secret)."
+            exit 1
+          fi
+          curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PAT}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/dispatches" \
+            -d '{"ref":"'"${TAG}"'"}'
