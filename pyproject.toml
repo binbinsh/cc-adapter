@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cc-adapter"
+version = "0.11.0"
+description = "Claude Code adapter for LM Studio / Poe / OpenRouter"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.32.0",
+]
+
+[project.scripts]
+cc-adapter = "cc_adapter.server:main"
+
+[project.optional-dependencies]
+dev = []
+
+[tool.setuptools.packages.find]
+where = ["."]
