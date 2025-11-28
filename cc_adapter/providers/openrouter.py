@@ -15,6 +15,7 @@ def send(payload: Dict[str, Any], settings: Settings) -> Dict[str, Any]:
         json=payload,
         headers=headers,
         timeout=settings.lmstudio_timeout,
+        proxies=settings.resolved_proxies(),
         stream=False,
     )
     try:
@@ -59,6 +60,7 @@ def stream(
         json=payload,
         headers=headers,
         timeout=settings.lmstudio_timeout,
+        proxies=settings.resolved_proxies(),
         stream=True,
     )
     try:

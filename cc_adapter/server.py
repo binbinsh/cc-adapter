@@ -244,6 +244,7 @@ class AdapterHandler(BaseHTTPRequestHandler):
 
 
 def run_server(settings: Settings):
+    settings.apply_no_proxy_env()
     server = AdapterHTTPServer((settings.host, settings.port), AdapterHandler)
     AdapterHandler.settings = settings  # type: ignore
     logger.info(

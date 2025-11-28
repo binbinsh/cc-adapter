@@ -69,6 +69,17 @@ uv run cc-adapter --host 0.0.0.0 --port 8000 \
   --daemon
 ```
 
+## Proxy support
+Use your OS proxy environment variables when VPN/firewall rules block provider calls.
+Set `HTTP_PROXY`/`HTTPS_PROXY` (or `ALL_PROXY` for SOCKS) and `NO_PROXY` for hosts to bypass; your VPN/proxy app or system network settings show the host/port (e.g. Clash/Surge local port).
+
+```bash
+export HTTP_PROXY=http://localhost:port
+export HTTPS_PROXY=http://localhost:port
+export NO_PROXY=127.0.0.1,localhost
+uv run cc-adapter --model poe:claude-sonnet-4.5 --poe-api-key YOUR_POE_API_KEY
+```
+
 ## Supported models
 Choose one of these models (provider prefix required).
 

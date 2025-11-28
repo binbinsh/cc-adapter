@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest import mock
 
 from cc_adapter import streaming
 from cc_adapter.config import Settings
@@ -45,6 +47,33 @@ class ServerHelpersTestCase(unittest.TestCase):
         }
         tokens = streaming.estimate_prompt_tokens(incoming)
         self.assertGreaterEqual(tokens, 1)
+
+    def test_resolved_proxies_prefer_specific_over_all(self):
+        settings = Settings(
+            http_proxy="http://http-proxy:8080",
+            https_proxy="http://https-proxy:8080",
+            all_proxy="socks5://fallback:1080",
+        )
+        proxies = settings.resolved_proxies()
+        self.assertEqual(proxies["http"], "http://http-proxy:8080")
+        self.assertEqual(proxies["https"], "http://https-proxy:8080")
+
+    def test_resolved_proxies_fall_back_to_all(self):
+        settings = Settings(
+            http_proxy="",
+            https_proxy="",
+            all_proxy="socks5://fallback:1080",
+        )
+        proxies = settings.resolved_proxies()
+        self.assertEqual(proxies["http"], "socks5://fallback:1080")
+        self.assertEqual(proxies["https"], "socks5://fallback:1080")
+
+    def test_apply_no_proxy_env_sets_environment(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            settings = Settings(no_proxy="127.0.0.1,localhost")
+            settings.apply_no_proxy_env()
+            self.assertEqual(os.environ["NO_PROXY"], "127.0.0.1,localhost")
+            self.assertEqual(os.environ["no_proxy"], "127.0.0.1,localhost")
 
 
 if __name__ == "__main__":

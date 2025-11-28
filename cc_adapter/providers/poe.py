@@ -1,5 +1,4 @@
 import copy
-import json
 from http.server import BaseHTTPRequestHandler
 from typing import Any, Dict, Optional
 
@@ -69,6 +68,7 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str, incomin
         json=clean_payload,
         headers=headers,
         timeout=settings.lmstudio_timeout,
+        proxies=settings.resolved_proxies(),
         stream=False,
     )
     try:
@@ -98,6 +98,7 @@ def stream(
         json=clean_payload,
         headers=headers,
         timeout=settings.lmstudio_timeout,
+        proxies=settings.resolved_proxies(),
         stream=True,
     )
     try:
