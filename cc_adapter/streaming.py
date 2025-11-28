@@ -371,7 +371,7 @@ def stream_openai_response(
         )
         handler.wfile.write(encoder("message_stop", {"type": "message_stop"}))
         handler.wfile.flush()
-    except BrokenPipeError:
+    except (BrokenPipeError, ConnectionResetError):
         logger.info("Client disconnected during stream")
     except Exception as exc:
         logger.exception("Error while streaming to client: %s", exc)
