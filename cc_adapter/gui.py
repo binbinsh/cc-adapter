@@ -4,6 +4,7 @@ import os
 import queue
 import threading
 import time
+from importlib.resources import as_file, files
 import tkinter as tk
 from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
@@ -107,8 +108,11 @@ class AdapterGUI:
 
     def _set_icon(self) -> None:
         try:
-            icon_path = Path(__file__).parent / "icon.png"
-            if icon_path.exists():
+            icon_resource = files(__package__).joinpath("icon.png")
+            if not icon_resource.is_file():
+                logging.debug("Window icon resource missing: %s", icon_resource)
+                return
+            with as_file(icon_resource) as icon_path:
                 icon_image = tk.PhotoImage(file=str(icon_path))
                 self.root.iconphoto(False, icon_image)
                 self._icon_image_ref = icon_image  # prevent GC
