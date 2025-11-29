@@ -30,7 +30,7 @@ uv run cc-adapter-gui
 
 Set provider/model/API keys in the window, then use `Test Provider` and `Start/Stop`
 
-![CC Adapter GUI](screenshot.png)
+<img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot.png" alt="CC Adapter GUI" width="800">
 
 ## LM Studio backend (CLI)
 Run cc-adapter against an LM Studio OpenAI-compatible server with gpt-oss-120b.
