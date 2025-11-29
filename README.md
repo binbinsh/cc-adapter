@@ -22,7 +22,17 @@ uv venv --python 3.12
 uv sync
 ```
 
-## LM Studio backend
+## GUI (recommended)
+Launch the Tkinter GUI for configure/start/stop:
+```
+uv run cc-adapter-gui
+```
+
+Set provider/model/API keys in the window, then use `Test Provider` and `Start/Stop`
+
+![CC Adapter GUI](screenshot.png)
+
+## LM Studio backend (CLI)
 Run cc-adapter against an LM Studio OpenAI-compatible server with gpt-oss-120b.
 
 ```bash
@@ -33,7 +43,7 @@ uv run cc-adapter --host 0.0.0.0 --port 8000 \
   --daemon
 ```
 
-## Poe backend
+## Poe backend (CLI)
 Run cc-adapter with Poe as the provider and claude-opus-4.5 model,
 ```bash
 uv run cc-adapter --host 0.0.0.0 --port 8000 \
@@ -51,7 +61,7 @@ uv run cc-adapter --host 0.0.0.0 --port 8000 \
   --daemon
 ```
 
-## OpenRouter backend
+## OpenRouter backend (CLI)
 Run cc-adapter with OpenRouter as the provider.
 ```bash
 uv run cc-adapter --host 0.0.0.0 --port 8000 \
@@ -112,4 +122,4 @@ HTTP entrypoints exposed by cc-adapter.
 - `/health` – health check
 - `/v1/messages` – Anthropic-compatible entrypoint (Claude Code target)
 - `/v1/models` – list available models
-- `/v1/messages/count_tokens` – rough prompt token estimate for a request body (heuristic)
+- `/v1/messages/count_tokens` – rough prompt token estimate for a request body

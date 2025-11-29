@@ -244,9 +244,7 @@ class AdapterHandler(BaseHTTPRequestHandler):
 
 
 def run_server(settings: Settings):
-    settings.apply_no_proxy_env()
-    server = AdapterHTTPServer((settings.host, settings.port), AdapterHandler)
-    AdapterHandler.settings = settings  # type: ignore
+    server = build_server(settings)
     logger.info(
         "Adapter listening on http://%s:%s (model=%s)",
         settings.host,
@@ -259,6 +257,14 @@ def run_server(settings: Settings):
         logger.info("Shutting down adapter")
     finally:
         server.server_close()
+
+
+def build_server(settings: Settings) -> AdapterHTTPServer:
+    """Create a configured AdapterHTTPServer without starting it."""
+    settings.apply_no_proxy_env()
+    server = AdapterHTTPServer((settings.host, settings.port), AdapterHandler)
+    AdapterHandler.settings = settings  # type: ignore
+    return server
 
 
 def main():

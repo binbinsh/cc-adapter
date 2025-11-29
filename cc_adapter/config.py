@@ -10,7 +10,7 @@ class Settings:
     model: str = os.getenv("CC_ADAPTER_MODEL", "")
     lmstudio_base: str = os.getenv("LMSTUDIO_BASE", "http://127.0.0.1:1234/v1/chat/completions")
     lmstudio_model: str = os.getenv("LMSTUDIO_MODEL", "gpt-oss-120b")
-    lmstudio_timeout: float = float(os.getenv("LMSTUDIO_TIMEOUT", "120"))
+    lmstudio_timeout: int = int(os.getenv("LMSTUDIO_TIMEOUT", "3600"))
 
     poe_base_url: str = os.getenv("POE_BASE_URL", "https://api.poe.com/v1/chat/completions")
     poe_api_key: str = os.getenv("POE_API_KEY", "")
