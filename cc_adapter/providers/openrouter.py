@@ -1,14 +1,27 @@
+import logging
 import requests
 from typing import Dict, Any, Optional
 from http.server import BaseHTTPRequestHandler
 
 from ..config import Settings
 from ..streaming import stream_openai_response
+from ..context_limits import enforce_context_limits
+
+logger = logging.getLogger(__name__)
 
 
-def send(payload: Dict[str, Any], settings: Settings) -> Dict[str, Any]:
+def send(payload: Dict[str, Any], settings: Settings, target_model: str) -> Dict[str, Any]:
     if not settings.openrouter_key:
         raise RuntimeError("OPENROUTER_API_KEY not set")
+    payload, trim_meta = enforce_context_limits(payload, settings, target_model)
+    if trim_meta.get("dropped"):
+        logger.warning(
+            "Trimmed %s message(s) for OpenRouter context (est %s -> %s tokens, budget=%s)",
+            trim_meta["dropped"],
+            trim_meta.get("before", 0),
+            trim_meta.get("after", 0),
+            trim_meta.get("budget", 0),
+        )
     headers = {"Authorization": f"Bearer {settings.openrouter_key}"}
     resp = requests.post(
         settings.openrouter_base,
@@ -54,6 +67,15 @@ def stream(
 ):
     if not settings.openrouter_key:
         raise RuntimeError("OPENROUTER_API_KEY not set")
+    payload, trim_meta = enforce_context_limits(payload, settings, requested_model)
+    if trim_meta.get("dropped"):
+        logger.warning(
+            "Trimmed %s message(s) for OpenRouter context (est %s -> %s tokens, budget=%s)",
+            trim_meta["dropped"],
+            trim_meta.get("before", 0),
+            trim_meta.get("after", 0),
+            trim_meta.get("budget", 0),
+        )
     headers = {"Authorization": f"Bearer {settings.openrouter_key}"}
     resp = requests.post(
         settings.openrouter_base,

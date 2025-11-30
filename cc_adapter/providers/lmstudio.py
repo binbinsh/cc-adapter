@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, List
 from http.server import BaseHTTPRequestHandler
 
 from ..config import Settings
+from ..context_limits import enforce_context_limits
 from ..streaming import stream_openai_response
 import copy
 
@@ -46,7 +47,10 @@ def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def send(payload: Dict[str, Any], settings: Settings) -> Dict[str, Any]:
-    clean_payload = _sanitize_payload(payload)
+    clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, payload.get("model", settings.lmstudio_model))
+    if trim_meta.get("dropped"):
+        # LM Studio server returns 400 on over-length prompts; prune to avoid.
+        pass
 
     resp = requests.post(
         settings.lmstudio_base,
@@ -70,7 +74,15 @@ def stream(
     handler: BaseHTTPRequestHandler,
     logger,
 ):
-    clean_payload = _sanitize_payload(payload)
+    clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, requested_model)
+    if trim_meta.get("dropped"):
+        logger.warning(
+            "Trimmed %s message(s) for LM Studio context (est %s -> %s tokens, budget=%s)",
+            trim_meta["dropped"],
+            trim_meta.get("before", 0),
+            trim_meta.get("after", 0),
+            trim_meta.get("budget", 0),
+        )
 
     resp = requests.post(
         settings.lmstudio_base,

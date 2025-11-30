@@ -1,9 +1,34 @@
-# CC Adapter
+<p align="center">
+  <img src="cc_adapter/icon.png" alt="CC Adapter Icon" width="128">
+</p>
 
-[![PyPI Version](https://img.shields.io/pypi/v/cc-adapter)](https://pypi.org/project/cc-adapter/)
-[![Monthly Downloads](https://img.shields.io/badge/dynamic/json?url=https://pypistats.org/api/packages/cc-adapter/recent&query=data.last_month&label=downloads/month)](https://pypistats.org/packages/cc-adapter)
+<h1 align="center">CC Adapter</h1>
+
+<p align="center">
+  <a href="https://pypi.org/project/cc-adapter/">
+    <img src="https://img.shields.io/pypi/v/cc-adapter" alt="PyPI Version">
+  </a>
+  <a href="https://pypistats.org/packages/cc-adapter">
+    <img src="https://img.shields.io/badge/dynamic/json?url=https://pypistats.org/api/packages/cc-adapter/recent&query=data.last_month&label=downloads/month" alt="Monthly Downloads">
+  </a>
+</p>
+
+## About
+
+<img align="right" width="40%" src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot.png" alt="CC Adapter GUI">
 
 Claude Code-compatible adapter bridging Anthropic `/v1/messages` to LM Studio, Poe, or OpenRouter and back. Streaming, tool calls, and cache-control passthrough are supported.
+
+<br clear="all">
+
+## Tested models
+Choose one of these thoroughly tested models (provider prefix required).
+
+- `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
+- `poe:claude-sonnet-4.5` (requires Poe key)
+- `poe:claude-opus-4.5` (requires Poe key)
+- `openrouter:claude-sonnet-4.5` (requires OpenRouter key)
+- `openrouter:claude-opus-4.5` (requires OpenRouter key)
 
 ## Install from PyPI (recommended)
 Quickest way to get cc-adapter.
@@ -29,8 +54,6 @@ uv run cc-adapter-gui
 ```
 
 Set provider/model/API keys in the window, then use `Test Provider` and `Start/Stop`
-
-<img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot.png" alt="CC Adapter GUI" width="800">
 
 ## LM Studio backend (CLI)
 Run cc-adapter against an LM Studio OpenAI-compatible server with gpt-oss-120b.
@@ -90,17 +113,6 @@ export NO_PROXY=127.0.0.1,localhost
 uv run cc-adapter --model poe:claude-sonnet-4.5 --poe-api-key YOUR_POE_API_KEY
 ```
 
-## Supported models
-Choose one of these models (provider prefix required).
-
-- `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
-- `poe:claude-sonnet-4.5` (requires Poe key)
-- `poe:claude-opus-4.5` (requires Poe key)
-- `openrouter:claude-sonnet-4.5` (requires OpenRouter key)
-- `openrouter:claude-opus-4.5` (requires OpenRouter key)
-
-`GET /v1/models` returns the available list based on which keys are configured.
-
 ## Run Claude Code
 Point Claude Code to the adapter using these env vars.
 
@@ -116,10 +128,3 @@ export CLAUDE_CODE_USE_BEDROCK=
 
 claude
 ```
-
-## Endpoints
-HTTP entrypoints exposed by cc-adapter.
-- `/health` – health check
-- `/v1/messages` – Anthropic-compatible entrypoint (Claude Code target)
-- `/v1/models` – list available models
-- `/v1/messages/count_tokens` – rough prompt token estimate for a request body

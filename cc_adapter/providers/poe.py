@@ -1,4 +1,5 @@
 import copy
+import logging
 from http.server import BaseHTTPRequestHandler
 from typing import Any, Dict, Optional
 
@@ -7,6 +8,7 @@ import requests
 from ..config import Settings
 from ..converters import openai_to_anthropic
 from ..streaming import stream_openai_response
+from ..context_limits import enforce_context_limits
 
 # Poe supports an OpenAI-compatible /v1/chat/completions endpoint. We forward
 # cleaned OpenAI payloads and bridge the streaming response into Anthropic SSE.
@@ -30,6 +32,8 @@ ALLOWED_TOP_LEVEL = {
     "logit_bias",
     "extra_body",
 }
+
+logger = logging.getLogger(__name__)
 
 
 def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -60,7 +64,15 @@ def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 def send(payload: Dict[str, Any], settings: Settings, target_model: str, incoming: Dict[str, Any]) -> Dict[str, Any]:
     if not settings.poe_api_key:
         raise RuntimeError("POE_API_KEY not set")
-    clean_payload = _sanitize_payload(payload)
+    clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, target_model)
+    if trim_meta.get("dropped"):
+        logger.warning(
+            "Trimmed %s message(s) for Poe context (est %s -> %s tokens, budget=%s)",
+            trim_meta["dropped"],
+            trim_meta.get("before", 0),
+            trim_meta.get("after", 0),
+            trim_meta.get("budget", 0),
+        )
 
     headers = {"Authorization": f"Bearer {settings.poe_api_key}"}
     resp = requests.post(
@@ -90,7 +102,15 @@ def stream(
 ):
     if not settings.poe_api_key:
         raise RuntimeError("POE_API_KEY not set")
-    clean_payload = _sanitize_payload(payload)
+    clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, requested_model)
+    if trim_meta.get("dropped"):
+        logger.warning(
+            "Trimmed %s message(s) for Poe context (est %s -> %s tokens, budget=%s)",
+            trim_meta["dropped"],
+            trim_meta.get("before", 0),
+            trim_meta.get("after", 0),
+            trim_meta.get("budget", 0),
+        )
 
     headers = {"Authorization": f"Bearer {settings.poe_api_key}"}
     resp = requests.post(
