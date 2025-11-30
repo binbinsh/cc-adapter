@@ -14,7 +14,7 @@ import platformdirs
 import requests
 from pathlib import Path
 
-from .config import Settings, apply_overrides, load_settings
+from .config import Settings, apply_overrides, default_context_window_for, load_settings
 from .server import build_server
 
 
@@ -57,6 +57,7 @@ class AdapterGUI:
         self.port_var = tk.StringVar(value=str(self.settings.port))
         self.provider_var = tk.StringVar(value=self._provider_display(provider or "lmstudio"))
         self.model_var = tk.StringVar(value=model_name)
+        self.context_window_var = tk.StringVar(value="")
         self.log_level_var = tk.StringVar(value=os.getenv("LOG_LEVEL", "INFO").upper())
         self.lmstudio_base_var = tk.StringVar(value=self.settings.lmstudio_base)
         self.lmstudio_timeout_var = tk.StringVar(value=str(self.settings.lmstudio_timeout))
@@ -75,10 +76,15 @@ class AdapterGUI:
             "poe": "claude-sonnet-4.5",
             "openrouter": "claude-sonnet-4.5",
         }
+        self.provider_models = {
+            "lmstudio": ["gpt-oss-120b"],
+            "poe": ["claude-sonnet-4.5", "claude-opus-4.5"],
+            "openrouter": ["claude-sonnet-4.5", "claude-opus-4.5"],
+        }
         self.last_provider = self._current_provider()
         self.server_thread: Optional[threading.Thread] = None
         self.server_instance = None
-        self.status_var = tk.StringVar(value="Server stopped")
+        self.status_var = tk.StringVar(value="")
         self.max_log_lines = 2000
         self.log_queue: queue.Queue[str] = queue.Queue()
         self.log_handler = LogQueueHandler(self.log_queue)
@@ -86,8 +92,13 @@ class AdapterGUI:
         self.provider_frames: dict[str, tk.Widget] = {}
 
         self._load_config_values()
+        self.last_context_default = ""
+        self._refresh_model_options()
+        self._update_context_window_default(force=False)
         self._setup_logging()
         self._build_layout()
+        self._format_context_window_var()
+        self._set_status("Server stopped")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(200, self._poll_logs)
 
@@ -158,15 +169,24 @@ class AdapterGUI:
             state="readonly",
         )
         provider_combo.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Label(controls, text="Model (without prefix)").grid(
+        provider_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_provider_change())
+        ttk.Label(controls, text="Model name").grid(
             row=1, column=2, sticky="w", padx=4, pady=4
         )
-        ttk.Entry(controls, textvariable=self.model_var, width=26).grid(
-            row=1, column=3, sticky="ew", padx=4, pady=4
+        self.model_combo = ttk.Combobox(
+            controls,
+            textvariable=self.model_var,
+            values=self.provider_models.get(self._current_provider(), []),
+            width=26,
+            state="readonly",
         )
-        ttk.Label(controls, text="Status").grid(row=1, column=4, sticky="w", padx=4, pady=4)
-        ttk.Label(controls, textvariable=self.status_var).grid(
-            row=1, column=5, sticky="w", padx=4, pady=4
+        self.model_combo.grid(row=1, column=3, sticky="ew", padx=4, pady=4)
+        self.model_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_model_change())
+        ttk.Label(controls, text="Context window").grid(
+            row=1, column=4, sticky="w", padx=4, pady=4
+        )
+        ttk.Entry(controls, textvariable=self.context_window_var, width=18).grid(
+            row=1, column=5, sticky="ew", padx=4, pady=4
         )
 
         self.provider_wrapper = ttk.LabelFrame(container, text="Provider settings")
@@ -291,6 +311,7 @@ class AdapterGUI:
         set_if("https_proxy", self.https_proxy_var)
         set_if("all_proxy", self.all_proxy_var)
         set_if("no_proxy", self.no_proxy_var)
+        set_if("context_window", self.context_window_var)
 
     def _auto_save(self) -> None:
         try:
@@ -305,9 +326,16 @@ class AdapterGUI:
         display = self._provider_display(provider)
         if self.provider_var.get() != display:
             self.provider_var.set(display)
-        self._set_model_default(provider, prev_provider)
+        self._refresh_model_options()
+        self._update_context_window_default(force=True)
+        self._format_context_window_var()
         self._update_provider_visibility()
         self.last_provider = provider
+        self._auto_save()
+
+    def _on_model_change(self) -> None:
+        self._update_context_window_default(force=True)
+        self._format_context_window_var()
         self._auto_save()
 
     def _apply_log_level(self) -> None:
@@ -317,6 +345,24 @@ class AdapterGUI:
         logging.getLogger().setLevel(level)
         logging.getLogger("cc-adapter").setLevel(level)
         self.log_handler.setLevel(level)
+
+    def _set_status(self, text: str) -> None:
+        self.status_var.set(text)
+        try:
+            self.root.title(f"CC Adapter GUI ({text})")
+        except Exception:
+            self.root.title("CC Adapter GUI")
+
+    def _format_context_window_var(self) -> None:
+        raw = (self.context_window_var.get() or "").replace(",", "").strip()
+        if not raw:
+            return
+        try:
+            num = int(raw)
+            self.context_window_var.set(f"{num:,}")
+        except ValueError:
+            # leave as-is on invalid input
+            pass
 
     def _build_settings(self) -> Settings:
         settings = load_settings()
@@ -340,6 +386,7 @@ class AdapterGUI:
             "host": self.host_var.get().strip() or settings.host,
             "port": port,
             "model": composed_model,
+            "context_window": self._safe_int(self.context_window_var.get().replace(",", "").strip(), default=None),
             "lmstudio_base": self.lmstudio_base_var.get().strip() or settings.lmstudio_base,
             "lmstudio_timeout": timeout,
             "poe_api_key": self.poe_key_var.get().strip(),
@@ -426,13 +473,42 @@ class AdapterGUI:
             else:
                 frame.grid_remove()
 
-    def _set_model_default(self, provider: str, prev_provider: Optional[str] = None) -> None:
+    def _refresh_model_options(self) -> None:
+        provider = self._current_provider()
+        options = self.provider_models.get(provider, [])
+        if hasattr(self, "model_combo"):
+            self.model_combo["values"] = options
         current = self.model_var.get().strip()
-        new_default = self.model_defaults.get(provider, "")
-        prev_default = self.model_defaults.get(prev_provider, "") if prev_provider else ""
-        if not current or current == prev_default:
-            if new_default:
-                self.model_var.set(new_default)
+        if options:
+            if current not in options:
+                self.model_var.set(options[0])
+                current = options[0]
+            if hasattr(self, "model_combo"):
+                self.model_combo.set(current)
+        else:
+            if hasattr(self, "model_combo"):
+                self.model_combo.set(current)
+
+    def _resolved_context_default(self) -> str:
+        model = self.model_var.get().strip()
+        provider = self._current_provider()
+        target = model
+        if provider and model and ":" not in model:
+            target = f"{provider}:{model}"
+        default = default_context_window_for(target)
+        return str(default) if default > 0 else ""
+
+    def _update_context_window_default(self, force: bool) -> None:
+        default = self._resolved_context_default()
+        if not default:
+            if force:
+                self.context_window_var.set("")
+            return
+        formatted = f"{int(default):,}"
+        current_raw = (self.context_window_var.get() or "").replace(",", "").strip()
+        if force or not current_raw:
+            self.context_window_var.set(formatted)
+        self.last_context_default = formatted
 
     def _save_config_file(self, silent: bool = False) -> None:
         data = {
@@ -440,6 +516,7 @@ class AdapterGUI:
             "port": self._safe_int(self.port_var.get().strip(), default=None),
             "provider": self._current_provider(),
             "model": self.model_var.get().strip(),
+            "context_window": self._safe_int(self.context_window_var.get().strip(), default=None),
             "log_level": self.log_level_var.get().strip(),
             "lmstudio_base": self.lmstudio_base_var.get().strip(),
             "lmstudio_timeout": self._safe_float(self.lmstudio_timeout_var.get().strip(), default=None),
@@ -491,7 +568,7 @@ class AdapterGUI:
         self.server_instance = server
         self.server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         self.server_thread.start()
-        self.status_var.set(f"Running on {settings.host}:{settings.port}")
+        self._set_status(f"Running on {settings.host}:{settings.port}")
         self.start_stop_text.set("Stop")
         self._auto_save()
         logging.info(
@@ -510,7 +587,7 @@ class AdapterGUI:
             self.server_thread.join(timeout=3)
         self.server_instance = None
         self.server_thread = None
-        self.status_var.set("Server stopped")
+        self._set_status("Server stopped")
         self.start_stop_text.set("Start")
         self._auto_save()
         logging.info("Adapter stopped from GUI")

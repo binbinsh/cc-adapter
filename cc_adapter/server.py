@@ -187,7 +187,7 @@ class AdapterHandler(BaseHTTPRequestHandler):
                     openai_payload, target_model, incoming
                 )
             try:
-                openrouter_response = openrouter.send(openai_payload, self.settings)
+                openrouter_response = openrouter.send(openai_payload, self.settings, target_model)
                 outgoing = openai_to_anthropic(openrouter_response, target_model, incoming)
                 return _json_response(self, 200, outgoing)
             except Exception as exc:
@@ -277,6 +277,12 @@ def main():
         required=False,
         help="Required default model with provider prefix (e.g., poe:claude-opus-4.5); request must include model if this is omitted. Can also set CC_ADAPTER_MODEL.",
     )
+    parser.add_argument(
+        "--context-window",
+        type=int,
+        default=int(os.getenv("CONTEXT_WINDOW", "0")),
+        help="Context window in tokens (prompt + completion); defaults per model if omitted.",
+    )
     parser.add_argument("--lmstudio-base", help="LM Studio base URL (OpenAI compatible)")
     parser.add_argument("--lmstudio-model", help="LM Studio model name")
     parser.add_argument("--lmstudio-timeout", type=float, help="LM Studio timeout (seconds)")
@@ -293,6 +299,8 @@ def main():
         cmd = [sys.executable, "-m", "cc_adapter.server", "--host", args.host, "--port", str(args.port)]
         if args.model:
             cmd.extend(["--model", args.model])
+        if args.context_window:
+            cmd.extend(["--context-window", str(args.context_window)])
         if args.lmstudio_base:
             cmd.extend(["--lmstudio-base", args.lmstudio_base])
         if args.lmstudio_model:
@@ -316,6 +324,7 @@ def main():
         "host": args.host,
         "port": args.port,
         "model": args.model,
+        "context_window": args.context_window,
         "lmstudio_base": args.lmstudio_base,
         "lmstudio_model": args.lmstudio_model,
         "lmstudio_timeout": args.lmstudio_timeout,

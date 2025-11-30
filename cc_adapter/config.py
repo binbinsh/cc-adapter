@@ -3,11 +3,28 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 
+def default_context_window_for(model: Optional[str]) -> int:
+    """Return a sensible default context window for known models."""
+    if not model:
+        return 0
+    name = model.lower()
+    if ":" in name:
+        name = name.split(":", 1)[1]
+    if "claude-sonnet-4.5" in name:
+        return 1_000_000
+    if "claude-opus-4.5" in name:
+        return 200_000
+    if "gpt-oss-120b" in name:
+        return 131_072
+    return 0
+
+
 @dataclass
 class Settings:
     host: str = os.getenv("ADAPTER_HOST", "0.0.0.0")
     port: int = int(os.getenv("ADAPTER_PORT", "8000"))
     model: str = os.getenv("CC_ADAPTER_MODEL", "")
+    context_window: int = int(os.getenv("CONTEXT_WINDOW", "0"))
     lmstudio_base: str = os.getenv("LMSTUDIO_BASE", "http://127.0.0.1:1234/v1/chat/completions")
     lmstudio_model: str = os.getenv("LMSTUDIO_MODEL", "gpt-oss-120b")
     lmstudio_timeout: int = int(os.getenv("LMSTUDIO_TIMEOUT", "3600"))
@@ -39,6 +56,13 @@ class Settings:
         if self.no_proxy:
             os.environ["NO_PROXY"] = self.no_proxy
             os.environ["no_proxy"] = self.no_proxy
+
+    def resolved_context_window(self, model: Optional[str] = None) -> int:
+        """Return the effective context window, falling back to model defaults."""
+        if self.context_window and self.context_window > 0:
+            return self.context_window
+        target = model or self.model
+        return default_context_window_for(target)
 
 
 def load_settings() -> Settings:
