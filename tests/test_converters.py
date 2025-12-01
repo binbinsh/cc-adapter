@@ -34,6 +34,17 @@ class ConvertersTestCase(unittest.TestCase):
         body = {
             "messages": [
                 {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "t1",
+                            "name": "do_it",
+                            "input": {},
+                        }
+                    ],
+                },
+                {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "run tool"},
@@ -45,9 +56,66 @@ class ConvertersTestCase(unittest.TestCase):
 
         out = converters.anthropic_to_openai(body, "gpt-oss-120b")
         tool_messages = [m for m in out["messages"] if m["role"] == "tool"]
+        self.assertEqual(out["messages"][0]["role"], "assistant")
+        self.assertEqual(out["messages"][1]["role"], "tool")
         self.assertEqual(len(tool_messages), 1)
         self.assertEqual(tool_messages[0]["tool_call_id"], "t1")
         self.assertEqual(tool_messages[0]["content"], "done")
+
+    def test_anthropic_to_openai_places_tool_result_before_user_text(self):
+        body = {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call-1",
+                            "name": "do_it",
+                            "input": {"x": 1},
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "note before"},
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": [{"type": "text", "text": "done"}],
+                        },
+                        {"type": "text", "text": "note after"},
+                    ],
+                },
+            ]
+        }
+
+        out = converters.anthropic_to_openai(body, "gpt-oss-120b")
+        self.assertEqual([m["role"] for m in out["messages"][:3]], ["assistant", "tool", "user"])
+        self.assertEqual(out["messages"][1]["tool_call_id"], "call-1")
+        self.assertEqual(out["messages"][1]["content"], "done")
+        user_msg = out["messages"][2]
+        self.assertEqual(user_msg["content"], [{"type": "text", "text": "note before\nnote after"}])
+
+    def test_anthropic_to_openai_folds_orphan_tool_results_into_user(self):
+        body = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "missing", "content": "done"},
+                        {"type": "text", "text": "follow up"},
+                    ],
+                }
+            ]
+        }
+
+        out = converters.anthropic_to_openai(body, "gpt-oss-120b")
+        self.assertEqual(len(out["messages"]), 1)
+        self.assertEqual(out["messages"][0]["role"], "user")
+        user_content = out["messages"][0]["content"]
+        self.assertEqual(user_content, [{"type": "text", "text": "done\nfollow up"}])
 
     def test_openai_to_anthropic_includes_thinking_and_tools(self):
         data = {

@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 
 def _flatten_text(content: Any) -> str:
@@ -67,6 +67,7 @@ def _map_thinking(thinking: Any) -> Optional[Dict[str, Any]]:
 def anthropic_to_openai(body: Dict[str, Any], model_name: str) -> Dict[str, Any]:
     messages: List[Dict[str, Any]] = []
     pending_tool_calls = False
+    pending_tool_call_ids: Set[str] = set()
     last_assistant_message: Optional[Dict[str, Any]] = None
 
     system_msg = _handle_system(body.get("system"))
@@ -91,7 +92,13 @@ def anthropic_to_openai(body: Dict[str, Any], model_name: str) -> Dict[str, Any]
                             user_text.append(part)
                         continue
                     if part.get("type") == "tool_result":
-                        tool_results.append(part)
+                        tool_use_id = part.get("tool_use_id") or part.get("id")
+                        if pending_tool_call_ids and tool_use_id in pending_tool_call_ids:
+                            tool_results.append(part)
+                        else:
+                            flattened = _flatten_text(part.get("content")) or ""
+                            if flattened:
+                                user_text.append(flattened)
                     elif part.get("type") == "text":
                         user_text.append(str(part.get("text", "")))
                     elif part.get("type") == "image":
@@ -100,31 +107,69 @@ def anthropic_to_openai(body: Dict[str, Any], model_name: str) -> Dict[str, Any]
                             images.append(maybe_img)
             elif isinstance(content, str):
                 user_text.append(content)
-            mixed: List[Any] = []
-            if user_text:
-                mixed.append({"type": "text", "text": "\n".join(user_text)})
-            mixed.extend(images)
-            if mixed:
+
+            def _append_user_message():
+                mixed: List[Any] = []
+                if user_text:
+                    mixed.append({"type": "text", "text": "\n".join(user_text)})
+                mixed.extend(images)
+                if not mixed:
+                    return
                 user_msg: Dict[str, Any] = {"role": "user", "content": mixed}
                 if msg.get("cache_control"):
                     user_msg["cache_control"] = msg.get("cache_control")
                 messages.append(user_msg)
+
+            if tool_results:
+                if pending_tool_call_ids:
+                    emitted_tool_message = False
+                    for result in tool_results:
+                        tool_id = (
+                            result.get("tool_use_id")
+                            or result.get("id")
+                            or "tool_call"
+                        )
+                        if pending_tool_call_ids and tool_id not in pending_tool_call_ids:
+                            flattened = _flatten_text(result.get("content")) or ""
+                            if flattened:
+                                user_text.append(flattened)
+                            continue
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_id,
+                                "content": _flatten_text(result.get("content")) or "",
+                            }
+                        )
+                        emitted_tool_message = True
+                    pending_tool_calls = False
+                    pending_tool_call_ids.clear()
+                    if (
+                        not emitted_tool_message
+                        and last_assistant_message
+                        and "tool_calls" in last_assistant_message
+                    ):
+                        last_assistant_message.pop("tool_calls", None)
+                    _append_user_message()
+                else:
+                    for result in tool_results:
+                        flattened = _flatten_text(result.get("content")) or ""
+                        if flattened:
+                            user_text.append(flattened)
+                    _append_user_message()
+                    if pending_tool_calls and last_assistant_message and "tool_calls" in last_assistant_message:
+                        # We expected tool outputs but none arrived; drop stale tool_calls.
+                        last_assistant_message.pop("tool_calls", None)
+                        pending_tool_calls = False
+                        pending_tool_call_ids.clear()
+            else:
+                _append_user_message()
                 if pending_tool_calls:
                     # Assistant tool_calls must be followed by tool results; drop stale tool_calls.
                     if last_assistant_message and "tool_calls" in last_assistant_message:
                         last_assistant_message.pop("tool_calls", None)
                     pending_tool_calls = False
-            for result in tool_results:
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": result.get("tool_use_id")
-                        or result.get("id")
-                        or "tool_call",
-                        "content": _flatten_text(result.get("content")) or "",
-                    }
-                )
-                pending_tool_calls = False
+                    pending_tool_call_ids.clear()
         elif role == "assistant":
             text_parts: List[str] = []
             tool_calls: List[Dict[str, Any]] = []
@@ -161,8 +206,10 @@ def anthropic_to_openai(body: Dict[str, Any], model_name: str) -> Dict[str, Any]
             if tool_calls:
                 assistant_message["tool_calls"] = tool_calls
                 pending_tool_calls = True
+                pending_tool_call_ids = {call["id"] for call in tool_calls if call.get("id")}
             else:
                 pending_tool_calls = False
+                pending_tool_call_ids.clear()
             if msg.get("cache_control"):
                 assistant_message["cache_control"] = msg.get("cache_control")
             messages.append(assistant_message)

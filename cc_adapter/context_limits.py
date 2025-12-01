@@ -17,6 +17,56 @@ def _token_estimator():
         return lambda text: max(1, (len(text) // 4) + 1)
 
 
+def _flatten_tool_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                if "text" in item:
+                    parts.append(str(item.get("text", "")))
+                elif "content" in item:
+                    nested = _flatten_tool_content(item.get("content"))
+                    if nested:
+                        parts.append(nested)
+        return "\n".join([p for p in parts if p])
+    if content is None:
+        return ""
+    return str(content)
+
+
+def _normalize_tool_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    allow_tool = False
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        if role == "assistant":
+            allow_tool = bool(msg.get("tool_calls"))
+            normalized.append(msg)
+        elif role == "tool":
+            if allow_tool:
+                normalized.append(msg)
+            else:
+                text = _flatten_tool_content(msg.get("content"))
+                if not text:
+                    allow_tool = False
+                    continue
+                prefix = msg.get("tool_call_id")
+                if prefix:
+                    text = f"[tool:{prefix}] {text}".strip()
+                normalized.append({"role": "user", "content": text})
+                allow_tool = False
+        else:
+            allow_tool = False
+            normalized.append(msg)
+    return normalized
+
+
 def _message_token_count(msg: Dict[str, Any], estimate) -> int:
     tokens = 0
     content = msg.get("content")
@@ -115,10 +165,12 @@ def _prune_messages_for_budget(
 def enforce_context_limits(
     payload: Dict[str, Any], settings: Settings, target_model: str
 ) -> Tuple[Dict[str, Any], Dict[str, int]]:
-    messages = payload.get("messages") or []
+    messages = _normalize_tool_messages(payload.get("messages") or [])
+    working_payload = dict(payload)
+    working_payload["messages"] = messages
     budget = settings.resolved_context_window(target_model)
     if budget <= 0 or not messages:
-        return payload, {"dropped": 0, "before": 0, "after": 0, "budget": budget}
+        return working_payload, {"dropped": 0, "before": 0, "after": 0, "budget": budget}
 
     estimator = _token_estimator()
     before_tokens = sum(_message_token_count(m, estimator) for m in messages)
@@ -130,15 +182,27 @@ def enforce_context_limits(
         completion_tokens = 0
     if completion_tokens >= budget:
         completion_tokens = budget // 2
-        payload = dict(payload)
-        payload["max_tokens"] = completion_tokens
+        working_payload["max_tokens"] = completion_tokens
 
     prompt_budget = max(1, budget - completion_tokens)
-    trimmed_messages, dropped, after_tokens = _prune_messages_for_budget(messages, prompt_budget, estimator)
-    trimmed = dropped > 0 or after_tokens < before_tokens or after_tokens > prompt_budget
-    if not trimmed:
-        return payload, {"dropped": 0, "before": before_tokens, "after": after_tokens, "budget": prompt_budget}
+    trimmed_messages, dropped, _ = _prune_messages_for_budget(messages, prompt_budget, estimator)
+    trimmed_messages = _normalize_tool_messages(trimmed_messages)
+    final_after_tokens = sum(_message_token_count(m, estimator) for m in trimmed_messages)
+    trimmed = dropped > 0 or final_after_tokens < before_tokens or final_after_tokens > prompt_budget
+    working_payload["messages"] = trimmed_messages
 
-    new_payload = dict(payload)
-    new_payload["messages"] = trimmed_messages
-    return new_payload, {"dropped": dropped, "before": before_tokens, "after": after_tokens, "budget": prompt_budget}
+    if not trimmed:
+        return working_payload, {
+            "dropped": 0,
+            "before": before_tokens,
+            "after": final_after_tokens,
+            "budget": prompt_budget,
+        }
+
+    new_payload = dict(working_payload)
+    return new_payload, {
+        "dropped": dropped,
+        "before": before_tokens,
+        "after": final_after_tokens,
+        "budget": prompt_budget,
+    }
