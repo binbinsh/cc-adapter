@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .config import Settings, apply_overrides, default_context_window_for, load_settings
 from .server import build_server
+from .logging_utils import ensure_verbose_logging, resolve_log_level
 
 
 class LogQueueHandler(logging.Handler):
@@ -43,6 +44,7 @@ def _parse_model(default_model: str) -> Tuple[str, str]:
 
 class AdapterGUI:
     def __init__(self) -> None:
+        ensure_verbose_logging()
         self.settings = load_settings()
         self.root = tk.Tk()
         self.root.title("CC Adapter GUI")
@@ -153,7 +155,7 @@ class AdapterGUI:
         log_level_combo = ttk.Combobox(
             controls,
             textvariable=self.log_level_var,
-            values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            values=["VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
             width=12,
             state="readonly",
         )
@@ -340,7 +342,7 @@ class AdapterGUI:
 
     def _apply_log_level(self) -> None:
         level_name = self.log_level_var.get().upper()
-        level = getattr(logging, level_name, logging.INFO)
+        level = resolve_log_level(level_name)
         os.environ["LOG_LEVEL"] = level_name
         logging.getLogger().setLevel(level)
         logging.getLogger("cc-adapter").setLevel(level)

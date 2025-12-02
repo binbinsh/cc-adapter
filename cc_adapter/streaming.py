@@ -1,6 +1,7 @@
 import json
 from typing import Any, Dict, Optional, Tuple
 from http.server import BaseHTTPRequestHandler
+from .logging_utils import VERBOSE_LEVEL, log_payload
 
 
 def _estimate_tokens_from_chars(char_count: int) -> int:
@@ -48,9 +49,15 @@ def stream_openai_response(
     handler: BaseHTTPRequestHandler,
     logger,
 ):
+    verbose_enabled = bool(logger) and logger.isEnabledFor(VERBOSE_LEVEL)
     encoder = lambda event, data: f"event: {event}\ndata: {json.dumps(data)}\n\n".encode(
         "utf-8"
     )
+
+    def _send(event: str, payload: Dict[str, Any]) -> None:
+        if verbose_enabled:
+            log_payload(logger, f"SSE -> {event}", payload)
+        handler.wfile.write(encoder(event, payload))
 
     sent_start = False
     text_block_open = False
@@ -85,22 +92,18 @@ def stream_openai_response(
         if not text_block_open:
             text_index = next_index
             next_index += 1
-            handler.wfile.write(
-                encoder(
-                    "content_block_start",
-                    {"type": "content_block_start", "index": text_index, "content_block": {"type": "text"}},
-                )
+            _send(
+                "content_block_start",
+                {"type": "content_block_start", "index": text_index, "content_block": {"type": "text"}},
             )
             text_block_open = True
 
     def close_text_block():
         nonlocal text_block_open
         if text_block_open:
-            handler.wfile.write(
-                encoder(
-                    "content_block_stop",
-                    {"type": "content_block_stop", "index": text_index},
-                )
+            _send(
+                "content_block_stop",
+                {"type": "content_block_stop", "index": text_index},
             )
             text_block_open = False
 
@@ -109,30 +112,26 @@ def stream_openai_response(
         if not thinking_block_open:
             thinking_index = next_index
             next_index += 1
-            handler.wfile.write(
-                encoder(
-                    "content_block_start",
-                    {
-                        "type": "content_block_start",
-                        "index": thinking_index,
-                        "content_block": {
-                            "type": "thinking",
-                            "thinking": "",
-                            "signature": "",
-                        },
+            _send(
+                "content_block_start",
+                {
+                    "type": "content_block_start",
+                    "index": thinking_index,
+                    "content_block": {
+                        "type": "thinking",
+                        "thinking": "",
+                        "signature": "",
                     },
-                )
+                },
             )
             thinking_block_open = True
 
     def close_thinking_block():
         nonlocal thinking_block_open
         if thinking_block_open:
-            handler.wfile.write(
-                encoder(
-                    "content_block_stop",
-                    {"type": "content_block_stop", "index": thinking_index},
-                )
+            _send(
+                "content_block_stop",
+                {"type": "content_block_stop", "index": thinking_index},
             )
             thinking_block_open = False
 
@@ -142,20 +141,18 @@ def stream_openai_response(
             idx = next_index
             next_index += 1
             tool_blocks[tool_id] = (idx, [])
-            handler.wfile.write(
-                encoder(
-                    "content_block_start",
-                    {
-                        "type": "content_block_start",
-                        "index": idx,
-                        "content_block": {
-                            "type": "tool_use",
-                            "id": tool_id,
-                            "name": name,
-                            "input": {},
-                        },
+            _send(
+                "content_block_start",
+                {
+                    "type": "content_block_start",
+                    "index": idx,
+                    "content_block": {
+                        "type": "tool_use",
+                        "id": tool_id,
+                        "name": name,
+                        "input": {},
                     },
-                )
+                },
             )
         return tool_blocks[tool_id]
 
@@ -171,6 +168,8 @@ def stream_openai_response(
                     chunk = json.loads(data.decode("utf-8"))
                 except Exception:
                     continue
+                if verbose_enabled:
+                    log_payload(logger, "Provider stream chunk", chunk)
                 choice = (chunk.get("choices") or [{}])[0]
                 delta = choice.get("delta") or {}
                 finish_reason = choice.get("finish_reason")
@@ -184,21 +183,19 @@ def stream_openai_response(
 
                 if not sent_start:
                     msg_id = chunk.get("id", "stream-msg")
-                    handler.wfile.write(
-                        encoder(
-                            "message_start",
-                            {
-                                "type": "message_start",
-                                "message": {
-                                    "id": msg_id,
-                                    "type": "message",
-                                    "role": "assistant",
-                                    "model": requested_model or "",
-                                    "metadata": incoming.get("metadata") if incoming else None,
-                                    "cache_control": incoming.get("cache_control") if incoming else None,
-                                },
+                    _send(
+                        "message_start",
+                        {
+                            "type": "message_start",
+                            "message": {
+                                "id": msg_id,
+                                "type": "message",
+                                "role": "assistant",
+                                "model": requested_model or "",
+                                "metadata": incoming.get("metadata") if incoming else None,
+                                "cache_control": incoming.get("cache_control") if incoming else None,
                             },
-                        )
+                        },
                     )
                     sent_start = True
 
@@ -208,15 +205,13 @@ def stream_openai_response(
                         if text:
                             output_char_count += len(text)
                             open_text_block()
-                            handler.wfile.write(
-                                encoder(
-                                    "content_block_delta",
-                                    {
-                                        "type": "content_block_delta",
-                                        "index": text_index,
-                                        "delta": {"type": "text_delta", "text": text},
-                                    },
-                                )
+                            _send(
+                                "content_block_delta",
+                                {
+                                    "type": "content_block_delta",
+                                    "index": text_index,
+                                    "delta": {"type": "text_delta", "text": text},
+                                },
                             )
                         continue
 
@@ -225,30 +220,26 @@ def stream_openai_response(
                         if text:
                             output_char_count += len(text)
                             open_text_block()
-                            handler.wfile.write(
-                                encoder(
-                                    "content_block_delta",
-                                    {
-                                        "type": "content_block_delta",
-                                        "index": text_index,
-                                        "delta": {"type": "text_delta", "text": text},
-                                    },
-                                )
+                            _send(
+                                "content_block_delta",
+                                {
+                                    "type": "content_block_delta",
+                                    "index": text_index,
+                                    "delta": {"type": "text_delta", "text": text},
+                                },
                             )
                     elif part.get("type") == "reasoning":
                         text = part.get("text", "")
                         if text:
                             output_char_count += len(text)
                             open_thinking_block()
-                            handler.wfile.write(
-                                encoder(
-                                    "content_block_delta",
-                                    {
-                                        "type": "content_block_delta",
-                                        "index": thinking_index,
-                                        "delta": {"type": "thinking_delta", "thinking": text},
-                                    },
-                                )
+                            _send(
+                                "content_block_delta",
+                                {
+                                    "type": "content_block_delta",
+                                    "index": thinking_index,
+                                    "delta": {"type": "thinking_delta", "thinking": text},
+                                },
                             )
 
                 reasoning_delta = delta.get("reasoning") or delta.get("reasoning_content")
@@ -281,15 +272,13 @@ def stream_openai_response(
                             continue
                         output_char_count += len(text)
                         open_thinking_block()
-                        handler.wfile.write(
-                            encoder(
-                                "content_block_delta",
-                                {
-                                    "type": "content_block_delta",
-                                    "index": thinking_index,
-                                    "delta": {"type": "thinking_delta", "thinking": text},
-                                },
-                            )
+                        _send(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": thinking_index,
+                                "delta": {"type": "thinking_delta", "thinking": text},
+                            },
                         )
 
                 for tool in delta.get("tool_calls") or []:
@@ -300,49 +289,50 @@ def stream_openai_response(
                     args = func.get("arguments")
                     if args:
                         buffer.append(str(args))
-                        handler.wfile.write(
-                            encoder(
-                                "content_block_delta",
-                                {
-                                    "type": "content_block_delta",
-                                    "index": idx,
-                                    "delta": {
-                                        "type": "input_json_delta",
-                                        "partial_json": "".join(buffer),
-                                    },
+                        _send(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": idx,
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": "".join(buffer),
                                 },
-                            )
+                            },
                         )
 
                 if finish_reason:
                     close_text_block()
                     close_thinking_block()
                     for tid, (idx, _) in tool_blocks.items():
-                        handler.wfile.write(
-                            encoder(
-                                "content_block_stop",
-                                {"type": "content_block_stop", "index": idx},
-                            )
+                        _send(
+                            "content_block_stop",
+                            {"type": "content_block_stop", "index": idx},
                         )
                     if usage_state.get("input_tokens", 0) == 0 and usage_state.get("output_tokens", 0) == 0:
                         usage_state["output_tokens"] = _estimate_tokens_from_chars(output_char_count)
                         usage_state["input_tokens"] = _estimate_tokens_from_chars(_collect_prompt_chars(incoming))
                     stop_reason = _map_finish_reason(finish_reason)
-                    handler.wfile.write(
-                        encoder(
-                            "message_delta",
-                            {
-                                "type": "message_delta",
-                                "delta": {
-                                    "stop_reason": stop_reason,
-                                    "stop_sequence": None,
-                                },
-                                "usage": usage_state,
+                    _send(
+                        "message_delta",
+                        {
+                            "type": "message_delta",
+                            "delta": {
+                                "stop_reason": stop_reason,
+                                "stop_sequence": None,
                             },
-                        )
+                            "usage": usage_state,
+                        },
                     )
-                    handler.wfile.write(encoder("message_stop", {"type": "message_stop"}))
+                    _send("message_stop", {"type": "message_stop"})
                     handler.wfile.flush()
+                    if verbose_enabled:
+                        logger.verbose(
+                            "Finished streaming to client (stop_reason=%s, usage=%s, output_chars=%s)",
+                            stop_reason,
+                            usage_state,
+                            output_char_count,
+                        )
                     return
 
                 handler.wfile.flush()
@@ -350,26 +340,22 @@ def stream_openai_response(
         close_text_block()
         close_thinking_block()
         for tid, (idx, _) in tool_blocks.items():
-            handler.wfile.write(
-                encoder(
-                    "content_block_stop",
-                    {"type": "content_block_stop", "index": idx},
-                )
+            _send(
+                "content_block_stop",
+                {"type": "content_block_stop", "index": idx},
             )
         if usage_state.get("input_tokens", 0) == 0 and usage_state.get("output_tokens", 0) == 0:
             usage_state["output_tokens"] = _estimate_tokens_from_chars(output_char_count)
             usage_state["input_tokens"] = _estimate_tokens_from_chars(_collect_prompt_chars(incoming))
-        handler.wfile.write(
-            encoder(
-                "message_delta",
-                {
-                    "type": "message_delta",
-                    "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-                    "usage": usage_state,
-                },
-            )
+        _send(
+            "message_delta",
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": usage_state,
+            },
         )
-        handler.wfile.write(encoder("message_stop", {"type": "message_stop"}))
+        _send("message_stop", {"type": "message_stop"})
         handler.wfile.flush()
     except (BrokenPipeError, ConnectionResetError):
         logger.info("Client disconnected during stream")
@@ -382,6 +368,12 @@ def stream_openai_response(
             input_tokens = _estimate_tokens_from_chars(_collect_prompt_chars(incoming))
             usage_state["input_tokens"] = input_tokens
             usage_state["output_tokens"] = output_tokens
+        if verbose_enabled:
+            logger.verbose(
+                "Finished streaming to client (usage=%s, output_chars=%s)",
+                usage_state,
+                output_char_count,
+            )
 
 
 def _map_finish_reason(reason: Any) -> Any:

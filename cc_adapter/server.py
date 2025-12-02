@@ -19,9 +19,11 @@ from .models import resolve_provider_model
 from .converters import anthropic_to_openai, openai_to_anthropic
 from .providers import lmstudio, poe, openrouter
 from . import streaming
+from .logging_utils import ensure_verbose_logging, log_payload, resolve_log_level
 
+ensure_verbose_logging()
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    level=resolve_log_level(os.getenv("LOG_LEVEL", "INFO")),
     format="%(asctime)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger("cc-adapter")
@@ -144,6 +146,8 @@ class AdapterHandler(BaseHTTPRequestHandler):
             logger.exception("Failed to parse incoming request")
             return _json_response(self, 400, {"error": f"Invalid JSON: {exc}"})
 
+        log_payload(logger, "Incoming /v1/messages payload", incoming)
+
         try:
             provider, target_model = resolve_provider_model(
                 incoming.get("model"), self.settings
@@ -170,6 +174,12 @@ class AdapterHandler(BaseHTTPRequestHandler):
             logger.exception("Failed to translate Anthropic request")
             return _json_response(self, 400, {"error": f"Bad request: {exc}"})
 
+        log_payload(
+            logger,
+            f"Sending payload to {provider}:{target_model}",
+            openai_payload,
+        )
+
         # Poe direct (OpenAI-compatible API)
         if provider == "poe":
             if not self.settings.poe_api_key:
@@ -189,6 +199,8 @@ class AdapterHandler(BaseHTTPRequestHandler):
             try:
                 openrouter_response = openrouter.send(openai_payload, self.settings, target_model)
                 outgoing = openai_to_anthropic(openrouter_response, target_model, incoming)
+                log_payload(logger, "OpenRouter response", openrouter_response)
+                log_payload(logger, "Responding to client", outgoing)
                 return _json_response(self, 200, outgoing)
             except Exception as exc:
                 logger.exception("OpenRouter request failed")
@@ -201,6 +213,8 @@ class AdapterHandler(BaseHTTPRequestHandler):
         try:
             lmstudio_response = lmstudio.send(openai_payload, self.settings)
             outgoing = openai_to_anthropic(lmstudio_response, target_model, incoming)
+            log_payload(logger, "LM Studio response", lmstudio_response)
+            log_payload(logger, "Responding to client", outgoing)
             return _json_response(self, 200, outgoing)
         except Exception as exc:
             logger.exception("LM Studio request failed")
@@ -210,6 +224,7 @@ class AdapterHandler(BaseHTTPRequestHandler):
     def _handle_poe(self, payload: Dict[str, Any], bot_name: str, incoming: Dict[str, Any]):
         try:
             poe_response = poe.send(payload, self.settings, bot_name, incoming)
+            log_payload(logger, "Responding to client", poe_response)
             return _json_response(self, 200, poe_response)
         except Exception as exc:
             logger.exception("Poe request failed")
@@ -270,7 +285,7 @@ def build_server(settings: Settings) -> AdapterHTTPServer:
 def main():
     parser = argparse.ArgumentParser(description="LM Studio / Poe / OpenRouter adapter")
     parser.add_argument("--host", default=os.getenv("ADAPTER_HOST", "0.0.0.0"))
-    parser.add_argument("--port", type=int, default=int(os.getenv("ADAPTER_PORT", "8000")))
+    parser.add_argument("--port", type=int, default=int(os.getenv("ADAPTER_PORT", "1808")))
     parser.add_argument("--daemon", action="store_true", help="run in background")
     parser.add_argument(
         "--model",

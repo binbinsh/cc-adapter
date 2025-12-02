@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler
 from ..config import Settings
 from ..streaming import stream_openai_response
 from ..context_limits import enforce_context_limits
+from ..logging_utils import log_payload
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str) -> Dict
             trim_meta.get("after", 0),
             trim_meta.get("budget", 0),
         )
+    log_payload(logger, f"OpenRouter request -> {target_model}", payload)
     headers = {"Authorization": f"Bearer {settings.openrouter_key}"}
     resp = requests.post(
         settings.openrouter_base,
@@ -36,6 +38,7 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str) -> Dict
     except requests.HTTPError as exc:
         raise requests.HTTPError(f"{exc} | body={resp.text}") from exc
     data = resp.json()
+    log_payload(logger, "OpenRouter raw response", data)
     if not data.get("usage"):
         header_map = {k.lower(): v for k, v in resp.headers.items()}
         prompt = header_map.get("x-openrouter-usage-prompt-tokens") or header_map.get(
@@ -76,6 +79,7 @@ def stream(
             trim_meta.get("after", 0),
             trim_meta.get("budget", 0),
         )
+    log_payload(logger, f"OpenRouter request -> {requested_model}", payload)
     headers = {"Authorization": f"Bearer {settings.openrouter_key}"}
     resp = requests.post(
         settings.openrouter_base,

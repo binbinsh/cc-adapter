@@ -1,3 +1,4 @@
+import logging
 import requests
 from typing import Dict, Any, Optional, List
 from http.server import BaseHTTPRequestHandler
@@ -6,6 +7,10 @@ from ..config import Settings
 from ..context_limits import enforce_context_limits
 from ..streaming import stream_openai_response
 import copy
+from ..logging_utils import log_payload
+
+
+logger = logging.getLogger(__name__)
 
 
 ALLOWED_TOP_LEVEL = {
@@ -51,7 +56,7 @@ def send(payload: Dict[str, Any], settings: Settings) -> Dict[str, Any]:
     if trim_meta.get("dropped"):
         # LM Studio server returns 400 on over-length prompts; prune to avoid.
         pass
-
+    log_payload(logger, f"LM Studio request -> {clean_payload.get('model') or settings.lmstudio_model}", clean_payload)
     resp = requests.post(
         settings.lmstudio_base,
         json=clean_payload,
@@ -63,7 +68,9 @@ def send(payload: Dict[str, Any], settings: Settings) -> Dict[str, Any]:
         resp.raise_for_status()
     except requests.HTTPError as exc:
         raise requests.HTTPError(f"{exc} | body={resp.text}") from exc
-    return resp.json()
+    data = resp.json()
+    log_payload(logger, "LM Studio raw response", data)
+    return data
 
 
 def stream(
@@ -84,6 +91,7 @@ def stream(
             trim_meta.get("budget", 0),
         )
 
+    log_payload(logger, f"LM Studio stream request -> {requested_model}", clean_payload)
     resp = requests.post(
         settings.lmstudio_base,
         json=clean_payload,

@@ -9,6 +9,7 @@ from ..config import Settings
 from ..converters import openai_to_anthropic
 from ..streaming import stream_openai_response
 from ..context_limits import enforce_context_limits
+from ..logging_utils import log_payload
 
 # Poe supports an OpenAI-compatible /v1/chat/completions endpoint. We forward
 # cleaned OpenAI payloads and bridge the streaming response into Anthropic SSE.
@@ -74,6 +75,7 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str, incomin
             trim_meta.get("budget", 0),
         )
 
+    log_payload(logger, f"Poe request -> {target_model}", clean_payload)
     headers = {"Authorization": f"Bearer {settings.poe_api_key}"}
     resp = requests.post(
         settings.poe_base_url,
@@ -89,6 +91,7 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str, incomin
         raise requests.HTTPError(f"{exc} | body={resp.text}") from exc
 
     data = resp.json()
+    log_payload(logger, "Poe raw response", data)
     return openai_to_anthropic(data, target_model, incoming)
 
 
@@ -112,6 +115,7 @@ def stream(
             trim_meta.get("budget", 0),
         )
 
+    log_payload(logger, f"Poe stream request -> {requested_model}", clean_payload)
     headers = {"Authorization": f"Bearer {settings.poe_api_key}"}
     resp = requests.post(
         settings.poe_base_url,
