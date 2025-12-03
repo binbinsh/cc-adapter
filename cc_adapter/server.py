@@ -74,11 +74,18 @@ def _port_available(host: str, port: int) -> bool:
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]):
     body = json.dumps(payload).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionResetError):
+        logger.info("Client disconnected before response could be sent (status=%s)", status)
+        handler.close_connection = True
+    except Exception:
+        handler.close_connection = True
+        logger.exception("Failed to send JSON response")
 
 
 class AdapterHTTPServer(ThreadingHTTPServer):
@@ -86,7 +93,7 @@ class AdapterHTTPServer(ThreadingHTTPServer):
 
     def handle_error(self, request, client_address):
         exc_type, exc, _ = sys.exc_info()
-        if exc_type is ConnectionResetError:
+        if exc_type in (ConnectionResetError, BrokenPipeError):
             logger.debug("Client disconnected during request from %s", client_address)
             return
         return super().handle_error(request, client_address)
@@ -235,6 +242,10 @@ class AdapterHandler(BaseHTTPRequestHandler):
     ):
         try:
             return poe.stream(payload, self.settings, bot_name, incoming, self, logger)
+        except (BrokenPipeError, ConnectionResetError):
+            logger.info("Client disconnected during Poe stream")
+            self.close_connection = True
+            return
         except Exception as exc:
             logger.exception("Poe stream failed")
             return _json_response(self, 502, {"error": f"Poe error: {exc}"})
@@ -244,6 +255,10 @@ class AdapterHandler(BaseHTTPRequestHandler):
     ):
         try:
             return openrouter.stream(payload, self.settings, target_model, incoming, self, logger)
+        except (BrokenPipeError, ConnectionResetError):
+            logger.info("Client disconnected during OpenRouter stream")
+            self.close_connection = True
+            return
         except Exception as exc:
             logger.exception("OpenRouter stream failed")
             return _json_response(self, 502, {"error": f"OpenRouter error: {exc}"})
@@ -253,6 +268,10 @@ class AdapterHandler(BaseHTTPRequestHandler):
     ):
         try:
             return lmstudio.stream(payload, self.settings, target_model, incoming, self, logger)
+        except (BrokenPipeError, ConnectionResetError):
+            logger.info("Client disconnected during LM Studio stream")
+            self.close_connection = True
+            return
         except Exception as exc:
             logger.exception("LM Studio stream failed")
             return _json_response(self, 502, {"error": f"LM Studio error: {exc}"})

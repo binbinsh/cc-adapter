@@ -359,8 +359,10 @@ def stream_openai_response(
         handler.wfile.flush()
     except (BrokenPipeError, ConnectionResetError):
         logger.info("Client disconnected during stream")
+        handler.close_connection = True
     except Exception as exc:
         logger.exception("Error while streaming to client: %s", exc)
+        handler.close_connection = True
     else:
         # If provider didn't return usage, estimate roughly to avoid always-zero metrics
         if usage_state["input_tokens"] == 0 and usage_state["output_tokens"] == 0:
@@ -374,6 +376,11 @@ def stream_openai_response(
                 usage_state,
                 output_char_count,
             )
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
 
 
 def _map_finish_reason(reason: Any) -> Any:

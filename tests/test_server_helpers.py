@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from unittest import mock
@@ -74,6 +75,58 @@ class ServerHelpersTestCase(unittest.TestCase):
             settings.apply_no_proxy_env()
             self.assertEqual(os.environ["NO_PROXY"], "127.0.0.1,localhost")
             self.assertEqual(os.environ["no_proxy"], "127.0.0.1,localhost")
+
+    def test_json_response_sends_body(self):
+        class DummyHandler:
+            def __init__(self):
+                self.status = None
+                self.headers = []
+                self.body = b""
+                self.close_connection = False
+                self.wfile = self
+
+            def send_response(self, status):
+                self.status = status
+
+            def send_header(self, key, value):
+                self.headers.append((key, value))
+
+            def end_headers(self):
+                return
+
+            def write(self, data):
+                self.body += data
+
+        handler = DummyHandler()
+        server._json_response(handler, 200, {"ok": True})
+        self.assertEqual(handler.status, 200)
+        self.assertIn(("Content-Type", "application/json"), handler.headers)
+        self.assertEqual(handler.body, json.dumps({"ok": True}).encode("utf-8"))
+        # Content-Length header should match the serialized body length.
+        self.assertIn(("Content-Length", str(len(handler.body))), handler.headers)
+        self.assertFalse(handler.close_connection)
+
+    def test_json_response_handles_broken_pipe(self):
+        class DummyHandler:
+            def __init__(self):
+                self.close_connection = False
+                self.wfile = self
+
+            def send_response(self, status):
+                return
+
+            def send_header(self, key, value):
+                return
+
+            def end_headers(self):
+                raise BrokenPipeError()
+
+            def write(self, data):
+                return
+
+        handler = DummyHandler()
+        server._json_response(handler, 200, {"ok": True})
+        self.assertTrue(handler.close_connection)
 
 
 if __name__ == "__main__":
