@@ -15,8 +15,8 @@ import requests
 from pathlib import Path
 
 from .config import Settings, apply_overrides, default_context_window_for, load_settings
-from .server import build_server
-from .logging_utils import ensure_verbose_logging, resolve_log_level
+from .server import build_server, port_available
+from .logging_utils import resolve_log_level
 
 
 class LogQueueHandler(logging.Handler):
@@ -44,7 +44,6 @@ def _parse_model(default_model: str) -> Tuple[str, str]:
 
 class AdapterGUI:
     def __init__(self) -> None:
-        ensure_verbose_logging()
         self.settings = load_settings()
         self.root = tk.Tk()
         self.root.title("CC Adapter GUI")
@@ -60,7 +59,11 @@ class AdapterGUI:
         self.provider_var = tk.StringVar(value=self._provider_display(provider or "lmstudio"))
         self.model_var = tk.StringVar(value=model_name)
         self.context_window_var = tk.StringVar(value="")
-        self.log_level_var = tk.StringVar(value=os.getenv("LOG_LEVEL", "INFO").upper())
+        self.log_level_options = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        default_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        if default_log_level not in self.log_level_options:
+            default_log_level = "INFO"
+        self.log_level_var = tk.StringVar(value=default_log_level)
         self.lmstudio_base_var = tk.StringVar(value=self.settings.lmstudio_base)
         self.lmstudio_timeout_var = tk.StringVar(value=str(self.settings.lmstudio_timeout))
         self.poe_base_var = tk.StringVar(value=self.settings.poe_base_url)
@@ -155,7 +158,7 @@ class AdapterGUI:
         log_level_combo = ttk.Combobox(
             controls,
             textvariable=self.log_level_var,
-            values=["VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            values=self.log_level_options,
             width=12,
             state="readonly",
         )
@@ -559,10 +562,26 @@ class AdapterGUI:
             messagebox.showerror("Invalid settings", str(exc))
             return
 
+        if not port_available(settings.host, settings.port):
+            logging.error(
+                "Port %s:%s is already in use. Stop the existing adapter or choose another port.",
+                settings.host,
+                settings.port,
+            )
+            self._set_status("Port in use")
+            self.start_stop_text.set("Start")
+            messagebox.showerror(
+                "Port in use",
+                f"Port {settings.host}:{settings.port} is already in use. Stop the existing adapter or choose another port.",
+            )
+            return
+
         try:
             server = build_server(settings)
         except OSError as exc:
+            logging.exception("Failed to start server")
             messagebox.showerror("Port in use", f"Failed to start server: {exc}")
+            self._set_status("Failed to start")
             self.start_stop_text.set("Start")
             return
 

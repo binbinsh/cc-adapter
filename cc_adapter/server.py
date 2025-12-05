@@ -19,9 +19,8 @@ from .models import resolve_provider_model
 from .converters import anthropic_to_openai, openai_to_anthropic
 from .providers import lmstudio, poe, openrouter
 from . import streaming
-from .logging_utils import ensure_verbose_logging, log_payload, resolve_log_level
+from .logging_utils import log_payload, resolve_log_level
 
-ensure_verbose_logging()
 logging.basicConfig(
     level=resolve_log_level(os.getenv("LOG_LEVEL", "INFO")),
     format="%(asctime)s %(levelname)s %(message)s",
@@ -60,7 +59,7 @@ def _is_allowed_model(provider: str, target_model: str, settings: Settings) -> b
     return False
 
 
-def _port_available(host: str, port: int) -> bool:
+def port_available(host: str, port: int) -> bool:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(1.0)
     try:
@@ -327,9 +326,13 @@ def main():
     args = parser.parse_args()
 
     if args.daemon:
-        if not _port_available(args.host, args.port):
-            print(f"Port {args.host}:{args.port} already in use. Is cc-adapter already running?")
-            return
+        if not port_available(args.host, args.port):
+            logger.error(
+                "Port %s:%s already in use. Stop the existing adapter or choose another port.",
+                args.host,
+                args.port,
+            )
+            sys.exit(1)
         cmd = [sys.executable, "-m", "cc_adapter.server", "--host", args.host, "--port", str(args.port)]
         if args.model:
             cmd.extend(["--model", args.model])
@@ -353,6 +356,14 @@ def main():
         print(f"Started daemon pid={proc.pid}")
         return
 
+    if not port_available(args.host, args.port):
+        logger.error(
+            "Port %s:%s already in use. Stop the existing adapter or choose another port.",
+            args.host,
+            args.port,
+        )
+        sys.exit(1)
+
     settings = load_settings()
     overrides = {
         "host": args.host,
@@ -368,7 +379,11 @@ def main():
         "openrouter_base": args.openrouter_base,
     }
     settings = apply_overrides(settings, overrides)
-    run_server(settings)
+    try:
+        run_server(settings)
+    except OSError:
+        logger.exception("Failed to start server")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

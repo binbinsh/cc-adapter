@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import unittest
 from unittest import mock
 
@@ -37,6 +38,15 @@ class ServerHelpersTestCase(unittest.TestCase):
         settings = Settings(openrouter_key="k2")
         allowed = server._is_allowed_model("openrouter", "anthropic/claude-sonnet-4.5", settings)
         self.assertTrue(allowed)
+
+    def test_port_available_detects_in_use(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        try:
+            self.assertFalse(server.port_available(host, port))
+        finally:
+            sock.close()
 
     def test_estimate_prompt_tokens_counts_text(self):
         incoming = {

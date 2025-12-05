@@ -1,7 +1,8 @@
 import json
+import logging
 from typing import Any, Dict, Optional, Tuple
 from http.server import BaseHTTPRequestHandler
-from .logging_utils import VERBOSE_LEVEL, log_payload
+from .logging_utils import log_payload
 
 
 def _estimate_tokens_from_chars(char_count: int) -> int:
@@ -49,13 +50,13 @@ def stream_openai_response(
     handler: BaseHTTPRequestHandler,
     logger,
 ):
-    verbose_enabled = bool(logger) and logger.isEnabledFor(VERBOSE_LEVEL)
+    debug_enabled = bool(logger) and logger.isEnabledFor(logging.DEBUG)
     encoder = lambda event, data: f"event: {event}\ndata: {json.dumps(data)}\n\n".encode(
         "utf-8"
     )
 
     def _send(event: str, payload: Dict[str, Any]) -> None:
-        if verbose_enabled:
+        if debug_enabled:
             log_payload(logger, f"SSE -> {event}", payload)
         handler.wfile.write(encoder(event, payload))
 
@@ -168,7 +169,7 @@ def stream_openai_response(
                     chunk = json.loads(data.decode("utf-8"))
                 except Exception:
                     continue
-                if verbose_enabled:
+                if debug_enabled:
                     log_payload(logger, "Provider stream chunk", chunk)
                 choice = (chunk.get("choices") or [{}])[0]
                 delta = choice.get("delta") or {}
@@ -326,8 +327,8 @@ def stream_openai_response(
                     )
                     _send("message_stop", {"type": "message_stop"})
                     handler.wfile.flush()
-                    if verbose_enabled:
-                        logger.verbose(
+                    if debug_enabled:
+                        logger.debug(
                             "Finished streaming to client (stop_reason=%s, usage=%s, output_chars=%s)",
                             stop_reason,
                             usage_state,
@@ -370,8 +371,8 @@ def stream_openai_response(
             input_tokens = _estimate_tokens_from_chars(_collect_prompt_chars(incoming))
             usage_state["input_tokens"] = input_tokens
             usage_state["output_tokens"] = output_tokens
-        if verbose_enabled:
-            logger.verbose(
+        if debug_enabled:
+            logger.debug(
                 "Finished streaming to client (usage=%s, output_chars=%s)",
                 usage_state,
                 output_char_count,
