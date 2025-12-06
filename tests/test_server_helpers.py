@@ -41,11 +41,22 @@ class ServerHelpersTestCase(unittest.TestCase):
         self.assertEqual(provider, "openrouter")
         self.assertEqual(name, "claude-haiku-4.5")
 
-    def test_resolve_provider_model_auto_falls_back_to_openrouter_haiku(self):
+    def test_resolve_provider_model_requires_provider_for_haiku_when_unprefixed(self):
         settings = Settings(model="poe:gpt-5.1-codex", openrouter_key="k2")
+        with self.assertRaises(ValueError):
+            resolve_provider_model("claude-haiku-4.5", settings)
+
+    def test_resolve_provider_model_maps_haiku_to_lmstudio_default(self):
+        settings = Settings(model="lmstudio:gpt-oss-120b", lmstudio_model="local-model")
         provider, name = resolve_provider_model("claude-haiku-4.5", settings)
-        self.assertEqual(provider, "openrouter")
-        self.assertEqual(name, "claude-haiku-4.5")
+        self.assertEqual(provider, "lmstudio")
+        self.assertEqual(name, "local-model")
+
+    def test_resolve_provider_model_maps_anthropic_haiku_to_lmstudio_default(self):
+        settings = Settings(model="lmstudio:gpt-oss-120b", lmstudio_model="offline-fallback")
+        provider, name = resolve_provider_model("anthropic/claude-haiku-4.5", settings)
+        self.assertEqual(provider, "lmstudio")
+        self.assertEqual(name, "offline-fallback")
 
     def test_available_models_reflect_keys(self):
         settings = Settings(

@@ -200,6 +200,13 @@ class AdapterHandler(BaseHTTPRequestHandler):
             resolution_bits.append("alias->canonical")
         if normalized:
             resolution_bits.append("added anthropic/")
+        if (
+            provider == "lmstudio"
+            and requested_model
+            and "claude-haiku" in requested_model.lower()
+            and target_model == self.settings.lmstudio_model
+        ):
+            resolution_bits.append("haiku->lmstudio_default")
         suffix = f" ({'; '.join(resolution_bits)})" if resolution_bits else ""
         logger.info("Resolved model %s:%s%s", provider, target_model, suffix)
 

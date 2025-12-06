@@ -14,23 +14,26 @@ def resolve_provider_model(model: Optional[str], settings: Settings) -> Tuple[st
         if provider == "poe":
             return "poe", canonicalize_model("poe", name)
         if provider == "lmstudio":
+            if "claude-haiku" in name.lower():
+                return "lmstudio", settings.lmstudio_model
             return "lmstudio", name
         if provider == "openrouter":
             return "openrouter", canonicalize_model("openrouter", name)
         raise ValueError(f"Unsupported provider prefix: {provider}")
 
     lowered = target_model.lower()
-    if lowered.startswith("claude-haiku"):
+    if "claude-haiku" in lowered:
         selected_provider = ""
         if settings.model and ":" in settings.model:
             selected_provider = settings.model.split(":", 1)[0].lower()
 
         if selected_provider == "poe" and settings.poe_api_key:
             return "poe", canonicalize_model("poe", target_model)
-        elif selected_provider == "openrouter" and settings.openrouter_key:
+        if selected_provider == "openrouter" and settings.openrouter_key:
             return "openrouter", canonicalize_model("openrouter", target_model)
-        else:
-            raise ValueError("No valid provider configured for Claude Haiku model.")
+        if selected_provider == "lmstudio":
+            return "lmstudio", settings.lmstudio_model
+        raise ValueError("No valid provider configured for Claude Haiku model.")
 
     # Fall back to server default provider if configured with a prefix
     if settings.model and ":" in settings.model:
