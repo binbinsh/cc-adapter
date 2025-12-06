@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from subprocess import Popen, DEVNULL
 
 from .config import Settings, load_settings, apply_overrides
-from .models import resolve_provider_model
+from .models import resolve_provider_model, canonicalize_model
 from .converters import anthropic_to_openai, openai_to_anthropic
 from .providers import lmstudio, poe, openrouter
 from . import streaming
@@ -33,6 +33,7 @@ def _available_models(settings: Settings):
     if settings.poe_api_key:
         models.extend(
             [
+                "poe:claude-haiku-4.5",
                 "poe:claude-sonnet-4.5",
                 "poe:claude-opus-4.5",
                 "poe:gpt-5.1-codex",
@@ -42,6 +43,7 @@ def _available_models(settings: Settings):
     if settings.openrouter_key:
         models.extend(
             [
+                "openrouter:claude-haiku-4.5",
                 "openrouter:claude-sonnet-4.5",
                 "openrouter:claude-opus-4.5",
                 "openrouter:gpt-5.1-codex",
@@ -60,6 +62,12 @@ def _is_allowed_model(provider: str, target_model: str, settings: Settings) -> b
     if provider == "openrouter" and target_model.startswith("anthropic/"):
         stripped = target_model.split("/", 1)[1]
         return f"{provider}:{stripped}" in allowed
+    if provider in ("poe", "openrouter") and (
+        target_model.startswith("claude-haiku") or target_model.startswith("anthropic/claude-haiku")
+    ):
+        # Accept any claude-haiku variant when the provider is configured.
+        has_key = settings.poe_api_key if provider == "poe" else settings.openrouter_key
+        return bool(has_key)
     return False
 
 
@@ -159,16 +167,23 @@ class AdapterHandler(BaseHTTPRequestHandler):
         log_payload(logger, "Incoming /v1/messages payload", incoming)
 
         try:
-            provider, target_model = resolve_provider_model(
-                incoming.get("model"), self.settings
-            )
+            requested_model = incoming.get("model")
+            provider, target_model = resolve_provider_model(requested_model, self.settings)
+            canonical_model = canonicalize_model(provider, target_model)
+            if canonical_model != target_model:
+                target_model = canonical_model
+                normalized_model = True
+            else:
+                normalized_model = False
         except ValueError as exc:
             return _json_response(self, 400, {"error": str(exc)})
 
         # Normalize OpenRouter model names: auto-add anthropic/ prefix for Claude models if missing
+        normalized = False
         if provider == "openrouter":
             if "/" not in target_model and target_model.lower().startswith("claude"):
                 target_model = f"anthropic/{target_model}"
+                normalized = True
 
         if not _is_allowed_model(provider, target_model, self.settings):
             allowed = ", ".join(_available_models(self.settings))
@@ -177,6 +192,16 @@ class AdapterHandler(BaseHTTPRequestHandler):
                 400,
                 {"error": f"Model not allowed. Provide one of: {allowed} (use CC_ADAPTER_MODEL or --model)."},
             )
+
+        resolution_bits = []
+        if requested_model and requested_model != target_model:
+            resolution_bits.append(f"requested={requested_model}")
+        if normalized_model:
+            resolution_bits.append("alias->canonical")
+        if normalized:
+            resolution_bits.append("added anthropic/")
+        suffix = f" ({'; '.join(resolution_bits)})" if resolution_bits else ""
+        logger.info("Resolved model %s:%s%s", provider, target_model, suffix)
 
         try:
             openai_payload = anthropic_to_openai(incoming, target_model)

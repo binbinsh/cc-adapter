@@ -10,9 +10,11 @@ def default_context_window_for(model: Optional[str]) -> int:
     name = model.lower()
     if ":" in name:
         name = name.split(":", 1)[1]
-    if "claude-sonnet-4.5" in name:
+    if "claude-haiku-4.5" in name or "claude-haiku-4-5" in name:
+        return 200_000
+    if "claude-sonnet-4.5" in name or "claude-sonnet-4-5" in name:
         return 1_000_000
-    if "claude-opus-4.5" in name:
+    if "claude-opus-4.5" in name or "claude-opus-4-5" in name:
         return 200_000
     if "gpt-5.1-codex" in name:
         return 400_000

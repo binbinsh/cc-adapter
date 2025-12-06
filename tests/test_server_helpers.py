@@ -23,6 +23,30 @@ class ServerHelpersTestCase(unittest.TestCase):
         self.assertEqual(provider, "poe")
         self.assertEqual(name, "claude-opus-4.5")
 
+    def test_resolve_provider_model_auto_prefers_poe_haiku(self):
+        settings = Settings(model="poe:gpt-5.1-codex", poe_api_key="k1")
+        provider, name = resolve_provider_model("claude-haiku-4.5", settings)
+        self.assertEqual(provider, "poe")
+        self.assertEqual(name, "claude-haiku-4.5")
+
+    def test_resolve_provider_model_auto_normalizes_haiku_alias(self):
+        settings = Settings(model="poe:gpt-5.1-codex", poe_api_key="k1")
+        provider, name = resolve_provider_model("claude-haiku-4-5-20251001", settings)
+        self.assertEqual(provider, "poe")
+        self.assertEqual(name, "claude-haiku-4.5")
+
+    def test_resolve_provider_model_prefers_selected_provider_openrouter(self):
+        settings = Settings(model="openrouter:claude-opus-4.5", poe_api_key="k1", openrouter_key="k2")
+        provider, name = resolve_provider_model("claude-haiku-4.5", settings)
+        self.assertEqual(provider, "openrouter")
+        self.assertEqual(name, "claude-haiku-4.5")
+
+    def test_resolve_provider_model_auto_falls_back_to_openrouter_haiku(self):
+        settings = Settings(model="poe:gpt-5.1-codex", openrouter_key="k2")
+        provider, name = resolve_provider_model("claude-haiku-4.5", settings)
+        self.assertEqual(provider, "openrouter")
+        self.assertEqual(name, "claude-haiku-4.5")
+
     def test_available_models_reflect_keys(self):
         settings = Settings(
             lmstudio_model="local-model",
@@ -31,9 +55,11 @@ class ServerHelpersTestCase(unittest.TestCase):
         )
         models = server._available_models(settings)
         self.assertIn("lmstudio:local-model", models)
+        self.assertIn("poe:claude-haiku-4.5", models)
         self.assertIn("poe:claude-opus-4.5", models)
         self.assertIn("poe:gpt-5.1-codex", models)
         self.assertIn("poe:gpt-5.1-codex-max", models)
+        self.assertIn("openrouter:claude-haiku-4.5", models)
         self.assertIn("openrouter:claude-sonnet-4.5", models)
         self.assertIn("openrouter:gpt-5.1-codex", models)
         self.assertIn("openrouter:gpt-5.1-codex-max", models)
@@ -42,6 +68,12 @@ class ServerHelpersTestCase(unittest.TestCase):
         settings = Settings(openrouter_key="k2")
         allowed = server._is_allowed_model("openrouter", "anthropic/claude-sonnet-4.5", settings)
         self.assertTrue(allowed)
+
+    def test_is_allowed_model_supports_haiku_variants(self):
+        settings = Settings(poe_api_key="k1", openrouter_key="k2")
+        self.assertTrue(server._is_allowed_model("poe", "claude-haiku-4.5", settings))
+        self.assertTrue(server._is_allowed_model("openrouter", "claude-haiku-4-5-20251001", settings))
+        self.assertTrue(server._is_allowed_model("openrouter", "anthropic/claude-haiku-4.5", settings))
 
     def test_port_available_detects_in_use(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

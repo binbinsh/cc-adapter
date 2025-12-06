@@ -6,6 +6,7 @@ from cc_adapter.config import Settings, default_context_window_for
 class ContextDefaultsTestCase(unittest.TestCase):
     def test_default_context_window_for_known_models(self):
         self.assertEqual(default_context_window_for("poe:claude-sonnet-4.5"), 1_000_000)
+        self.assertEqual(default_context_window_for("poe:claude-haiku-4.5"), 200_000)
         self.assertEqual(default_context_window_for("openrouter:claude-opus-4.5"), 200_000)
         self.assertEqual(default_context_window_for("poe:gpt-5.1-codex"), 400_000)
         self.assertEqual(default_context_window_for("poe:gpt-5.1-codex-max"), 400_000)
