@@ -31,6 +31,8 @@ class Settings:
 
     poe_base_url: str = os.getenv("POE_BASE_URL", "https://api.poe.com/v1/chat/completions")
     poe_api_key: str = os.getenv("POE_API_KEY", "")
+    poe_max_retries: int = int(os.getenv("POE_MAX_RETRIES", "2"))
+    poe_retry_backoff: float = float(os.getenv("POE_RETRY_BACKOFF", "0.5"))
 
     openrouter_base: str = os.getenv("OPENROUTER_BASE", "https://openrouter.ai/api/v1/chat/completions")
     openrouter_key: str = os.getenv("OPENROUTER_API_KEY", "")

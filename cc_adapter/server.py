@@ -321,6 +321,8 @@ def main():
     parser.add_argument("--lmstudio-timeout", type=float, help="LM Studio timeout (seconds)")
     parser.add_argument("--poe-api-key", help="Poe API key")
     parser.add_argument("--poe-base-url", help="Poe base URL")
+    parser.add_argument("--poe-max-retries", type=int, help="Poe retry attempts for upstream errors")
+    parser.add_argument("--poe-retry-backoff", type=float, help="Seconds between retry attempts")
     parser.add_argument("--openrouter-api-key", help="OpenRouter API key")
     parser.add_argument("--openrouter-base", help="OpenRouter base URL")
     args = parser.parse_args()
@@ -348,6 +350,10 @@ def main():
             cmd.extend(["--poe-api-key", args.poe_api_key])
         if args.poe_base_url:
             cmd.extend(["--poe-base-url", args.poe_base_url])
+        if args.poe_max_retries is not None:
+            cmd.extend(["--poe-max-retries", str(args.poe_max_retries)])
+        if args.poe_retry_backoff is not None:
+            cmd.extend(["--poe-retry-backoff", str(args.poe_retry_backoff)])
         if args.openrouter_api_key:
             cmd.extend(["--openrouter-api-key", args.openrouter_api_key])
         if args.openrouter_base:
@@ -375,6 +381,8 @@ def main():
         "lmstudio_timeout": args.lmstudio_timeout,
         "poe_api_key": args.poe_api_key,
         "poe_base_url": args.poe_base_url,
+        "poe_max_retries": args.poe_max_retries,
+        "poe_retry_backoff": args.poe_retry_backoff,
         "openrouter_key": args.openrouter_api_key,
         "openrouter_base": args.openrouter_base,
     }

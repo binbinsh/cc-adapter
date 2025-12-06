@@ -1,9 +1,11 @@
 import copy
 import logging
 from http.server import BaseHTTPRequestHandler
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from ..config import Settings
 from ..converters import openai_to_anthropic
@@ -35,6 +37,7 @@ ALLOWED_TOP_LEVEL = {
 }
 
 logger = logging.getLogger(__name__)
+RETRYABLE_STATUS_CODES = (429, 500, 502, 503, 504)
 
 
 def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -62,6 +65,71 @@ def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
+def _build_retry_session(settings: Settings) -> requests.Session:
+    session = requests.Session()
+    retries = Retry(
+        total=settings.poe_max_retries,
+        backoff_factor=settings.poe_retry_backoff,
+        status_forcelist=RETRYABLE_STATUS_CODES,
+        allowed_methods={"POST"},
+        raise_on_status=False,
+        respect_retry_after_header=True,
+    )
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    proxies = settings.resolved_proxies()
+    if proxies:
+        session.proxies.update(proxies)
+    return session
+
+
+def _response_body_snippet(resp: Optional[requests.Response], limit: int = 600) -> str:
+    if not resp:
+        return ""
+    try:
+        body = resp.text or ""
+    except Exception:
+        return ""
+    body = " ".join(body.split())
+    if not body:
+        return ""
+    if len(body) > limit:
+        return f"{body[:limit]}..."
+    return body
+
+
+def _post_with_retries(
+    payload: Dict[str, Any], settings: Settings, stream: bool = False
+) -> Tuple[requests.Session, requests.Response]:
+    session = _build_retry_session(settings)
+    resp: Optional[requests.Response] = None
+    try:
+        resp = session.post(
+            settings.poe_base_url,
+            json=payload,
+            headers={"Authorization": f"Bearer {settings.poe_api_key}"},
+            timeout=settings.lmstudio_timeout,
+            stream=stream,
+        )
+        resp.raise_for_status()
+        return session, resp
+    except requests.HTTPError as exc:
+        snippet = _response_body_snippet(resp or getattr(exc, "response", None))
+        if resp:
+            resp.close()
+        session.close()
+        msg = str(exc)
+        if snippet:
+            msg = f"{msg} | body_snippet={snippet}"
+        raise requests.HTTPError(msg) from exc
+    except requests.RequestException:
+        if resp:
+            resp.close()
+        session.close()
+        raise
+
+
 def send(payload: Dict[str, Any], settings: Settings, target_model: str, incoming: Dict[str, Any]) -> Dict[str, Any]:
     if not settings.poe_api_key:
         raise RuntimeError("POE_API_KEY not set")
@@ -76,23 +144,14 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str, incomin
         )
 
     log_payload(logger, f"Poe request -> {target_model}", clean_payload)
-    headers = {"Authorization": f"Bearer {settings.poe_api_key}"}
-    resp = requests.post(
-        settings.poe_base_url,
-        json=clean_payload,
-        headers=headers,
-        timeout=settings.lmstudio_timeout,
-        proxies=settings.resolved_proxies(),
-        stream=False,
-    )
+    session, resp = _post_with_retries(clean_payload, settings, stream=False)
     try:
-        resp.raise_for_status()
-    except requests.HTTPError as exc:
-        raise requests.HTTPError(f"{exc} | body={resp.text}") from exc
-
-    data = resp.json()
-    log_payload(logger, "Poe raw response", data)
-    return openai_to_anthropic(data, target_model, incoming)
+        data = resp.json()
+        log_payload(logger, "Poe raw response", data)
+        return openai_to_anthropic(data, target_model, incoming)
+    finally:
+        resp.close()
+        session.close()
 
 
 def stream(
@@ -116,24 +175,17 @@ def stream(
         )
 
     log_payload(logger, f"Poe stream request -> {requested_model}", clean_payload)
-    headers = {"Authorization": f"Bearer {settings.poe_api_key}"}
-    resp = requests.post(
-        settings.poe_base_url,
-        json=clean_payload,
-        headers=headers,
-        timeout=settings.lmstudio_timeout,
-        proxies=settings.resolved_proxies(),
-        stream=True,
-    )
-    try:
-        resp.raise_for_status()
-    except requests.HTTPError as exc:
-        raise requests.HTTPError(f"{exc} | body={resp.text}") from exc
-
+    session, resp = _post_with_retries(clean_payload, settings, stream=True)
     handler.send_response(200)
     handler.send_header("Content-Type", "text/event-stream")
     handler.send_header("Cache-Control", "no-cache")
     handler.send_header("Connection", "keep-alive")
     handler.end_headers()
 
-    stream_openai_response(resp, requested_model, incoming, handler, logger)
+    try:
+        stream_openai_response(resp, requested_model, incoming, handler, logger)
+    finally:
+        try:
+            resp.close()
+        finally:
+            session.close()

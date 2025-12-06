@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cc-adapter"
-version = "0.16.3"
+version = "0.16.4"
 description = "Claude Code adapter for LM Studio / Poe / OpenRouter"
 readme = "README.md"
 requires-python = ">=3.9"
