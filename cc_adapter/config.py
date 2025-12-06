@@ -14,6 +14,8 @@ def default_context_window_for(model: Optional[str]) -> int:
         return 1_000_000
     if "claude-opus-4.5" in name:
         return 200_000
+    if "gpt-5.1-codex" in name:
+        return 400_000
     if "gpt-oss-120b" in name:
         return 131_072
     return 0

@@ -83,8 +83,8 @@ class AdapterGUI:
         }
         self.provider_models = {
             "lmstudio": ["gpt-oss-120b"],
-            "poe": ["claude-sonnet-4.5", "claude-opus-4.5"],
-            "openrouter": ["claude-sonnet-4.5", "claude-opus-4.5"],
+            "poe": ["claude-sonnet-4.5", "claude-opus-4.5", "gpt-5.1-codex", "gpt-5.1-codex-max"],
+            "openrouter": ["claude-sonnet-4.5", "claude-opus-4.5", "gpt-5.1-codex", "gpt-5.1-codex-max"],
         }
         self.last_provider = self._current_provider()
         self.server_thread: Optional[threading.Thread] = None
@@ -105,6 +105,7 @@ class AdapterGUI:
         self._format_context_window_var()
         self._set_status("Server stopped")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.after(50, self._present_window)
         self.root.after(200, self._poll_logs)
 
     def _setup_logging(self) -> None:
@@ -121,6 +122,20 @@ class AdapterGUI:
         x = max((screen_w - width) // 2, 0)
         y = max((screen_h - height) // 2, 0)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _present_window(self) -> None:
+        try:
+            self.root.update_idletasks()
+            current_w = self.root.winfo_width() or 960
+            current_h = self.root.winfo_height() or 720
+            self._center_window(current_w, current_h)
+            self.root.deiconify()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.after(150, lambda: self.root.attributes("-topmost", False))
+            self.root.focus_force()
+        except Exception:
+            logging.debug("Could not foreground window", exc_info=True)
 
     def _set_icon(self) -> None:
         try:
@@ -661,7 +676,7 @@ class AdapterGUI:
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1,
+            "max_tokens": 32,
         }
         resp = requests.post(
             settings.lmstudio_base,
@@ -678,10 +693,11 @@ class AdapterGUI:
     def _test_poe(self, settings: Settings, model: str) -> str:
         if not settings.poe_api_key:
             raise ValueError("POE_API_KEY is required for Poe")
+        model_name = model.split(":", 1)[1] if model.lower().startswith("poe:") else model
         payload = {
-            "model": model,
+            "model": model_name,
             "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1,
+            "max_tokens": 32,
         }
         resp = requests.post(
             settings.poe_base_url,
@@ -690,8 +706,12 @@ class AdapterGUI:
             timeout=settings.lmstudio_timeout,
             proxies=settings.resolved_proxies(),
         )
-        resp.raise_for_status()
-        data = resp.json()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            snippet = (resp.text or "").strip()
+            raise requests.HTTPError(f"{exc} | body_snippet={snippet[:400]}") from exc
+        resp.json()
         return f"HTTP {resp.status_code}"
 
     def _test_openrouter(self, settings: Settings, model: str) -> str:
@@ -703,7 +723,7 @@ class AdapterGUI:
         payload = {
             "model": target_model,
             "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1,
+            "max_tokens": 32,
         }
         resp = requests.post(
             settings.openrouter_base,

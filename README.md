@@ -61,6 +61,15 @@ uv run cc-adapter --host 0.0.0.0 --port 8005 \
   --daemon
 ```
 
+gpt-5.1-codex is also available:
+
+```bash
+uv run cc-adapter --host 0.0.0.0 --port 8005 \
+  --model poe:gpt-5.1-codex \
+  --poe-api-key YOUR_POE_API_KEY \
+  --daemon
+```
+
 ## OpenRouter backend (CLI)
 Run cc-adapter with OpenRouter as the provider.
 ```bash
@@ -75,6 +84,15 @@ or
 ```bash
 uv run cc-adapter --host 0.0.0.0 --port 8005 \
   --model openrouter:claude-sonnet-4.5 \
+  --openrouter-api-key YOUR_OPENROUTER_API_KEY \
+  --daemon
+```
+
+gpt-5.1-codex is also available:
+
+```bash
+uv run cc-adapter --host 0.0.0.0 --port 8005 \
+  --model openrouter:gpt-5.1-codex \
   --openrouter-api-key YOUR_OPENROUTER_API_KEY \
   --daemon
 ```
@@ -112,5 +130,9 @@ Choose one of these thoroughly tested models (provider prefix required).
 - `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
 - `poe:claude-sonnet-4.5` (requires Poe key)
 - `poe:claude-opus-4.5` (requires Poe key)
+- `poe:gpt-5.1-codex` (requires Poe key)
+- `poe:gpt-5.1-codex-max` (requires Poe key)
 - `openrouter:claude-sonnet-4.5` (requires OpenRouter key)
 - `openrouter:claude-opus-4.5` (requires OpenRouter key)
+- `openrouter:gpt-5.1-codex` (requires OpenRouter key)
+- `openrouter:gpt-5.1-codex-max` (requires OpenRouter key)

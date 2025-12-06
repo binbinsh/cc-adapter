@@ -35,6 +35,8 @@ def _available_models(settings: Settings):
             [
                 "poe:claude-sonnet-4.5",
                 "poe:claude-opus-4.5",
+                "poe:gpt-5.1-codex",
+                "poe:gpt-5.1-codex-max",
             ]
         )
     if settings.openrouter_key:
@@ -42,6 +44,8 @@ def _available_models(settings: Settings):
             [
                 "openrouter:claude-sonnet-4.5",
                 "openrouter:claude-opus-4.5",
+                "openrouter:gpt-5.1-codex",
+                "openrouter:gpt-5.1-codex-max",
             ]
         )
     return models

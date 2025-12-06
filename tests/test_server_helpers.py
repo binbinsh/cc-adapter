@@ -32,7 +32,11 @@ class ServerHelpersTestCase(unittest.TestCase):
         models = server._available_models(settings)
         self.assertIn("lmstudio:local-model", models)
         self.assertIn("poe:claude-opus-4.5", models)
+        self.assertIn("poe:gpt-5.1-codex", models)
+        self.assertIn("poe:gpt-5.1-codex-max", models)
         self.assertIn("openrouter:claude-sonnet-4.5", models)
+        self.assertIn("openrouter:gpt-5.1-codex", models)
+        self.assertIn("openrouter:gpt-5.1-codex-max", models)
 
     def test_is_allowed_model_supports_anthropic_prefix(self):
         settings = Settings(openrouter_key="k2")
