@@ -22,7 +22,7 @@ def default_context_window_for(model: Optional[str]) -> int:
 @dataclass
 class Settings:
     host: str = os.getenv("ADAPTER_HOST", "0.0.0.0")
-    port: int = int(os.getenv("ADAPTER_PORT", "1808"))
+    port: int = int(os.getenv("ADAPTER_PORT", "8005"))
     model: str = os.getenv("CC_ADAPTER_MODEL", "")
     context_window: int = int(os.getenv("CONTEXT_WINDOW", "0"))
     lmstudio_base: str = os.getenv("LMSTUDIO_BASE", "http://127.0.0.1:1234/v1/chat/completions")

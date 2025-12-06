@@ -36,7 +36,7 @@ Set provider/model/API keys in the window, then use `Test Provider` and `Start/S
 Run cc-adapter against an LM Studio OpenAI-compatible server with gpt-oss-120b.
 
 ```bash
-uv run cc-adapter --host 0.0.0.0 --port 1808 \
+uv run cc-adapter --host 0.0.0.0 --port 8005 \
   --model lmstudio:gpt-oss-120b \
   --lmstudio-base http://127.0.0.1:1234/v1/chat/completions \
   --lmstudio-timeout 3600 \
@@ -46,7 +46,7 @@ uv run cc-adapter --host 0.0.0.0 --port 1808 \
 ## Poe backend (CLI)
 Run cc-adapter with Poe as the provider and claude-opus-4.5 model,
 ```bash
-uv run cc-adapter --host 0.0.0.0 --port 1808 \
+uv run cc-adapter --host 0.0.0.0 --port 8005 \
   --model poe:claude-opus-4.5 \
   --poe-api-key YOUR_POE_API_KEY \
   --daemon
@@ -55,7 +55,7 @@ uv run cc-adapter --host 0.0.0.0 --port 1808 \
 or claude-sonnet-4.5 for cheaper model,
 
 ```bash
-uv run cc-adapter --host 0.0.0.0 --port 1808 \
+uv run cc-adapter --host 0.0.0.0 --port 8005 \
   --model poe:claude-sonnet-4.5 \
   --poe-api-key YOUR_POE_API_KEY \
   --daemon
@@ -64,7 +64,7 @@ uv run cc-adapter --host 0.0.0.0 --port 1808 \
 ## OpenRouter backend (CLI)
 Run cc-adapter with OpenRouter as the provider.
 ```bash
-uv run cc-adapter --host 0.0.0.0 --port 1808 \
+uv run cc-adapter --host 0.0.0.0 --port 8005 \
   --model openrouter:claude-opus-4.5 \
   --openrouter-api-key YOUR_OPENROUTER_API_KEY \
   --daemon
@@ -73,7 +73,7 @@ uv run cc-adapter --host 0.0.0.0 --port 1808 \
 or
 
 ```bash
-uv run cc-adapter --host 0.0.0.0 --port 1808 \
+uv run cc-adapter --host 0.0.0.0 --port 8005 \
   --model openrouter:claude-sonnet-4.5 \
   --openrouter-api-key YOUR_OPENROUTER_API_KEY \
   --daemon
@@ -94,7 +94,7 @@ uv run cc-adapter --model poe:claude-sonnet-4.5 --poe-api-key YOUR_POE_API_KEY
 Point Claude Code to the adapter using these env vars.
 
 ```bash
-export ANTHROPIC_BASE_URL=http://127.0.0.1:1808
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8005
 export ANTHROPIC_AUTH_TOKEN=dummy
 export ANTHROPIC_API_KEY=
 export NO_PROXY=127.0.0.1
