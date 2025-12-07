@@ -60,7 +60,7 @@ Notes:
 - Change `--port` if 8005 is taken.
 - Swap `--model` for any tested model above (ensure the matching provider keys).
 
-## GUI (recommended for setup)
+## GUI (recommended for daily use)
 Launch the Tkinter GUI to configure and start/stop the adapter:
 
 ```bash
