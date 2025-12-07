@@ -338,7 +338,7 @@ def build_server(settings: Settings) -> AdapterHTTPServer:
 
 def main():
     parser = argparse.ArgumentParser(description="LM Studio / Poe / OpenRouter adapter")
-    parser.add_argument("--host", default=os.getenv("ADAPTER_HOST", "0.0.0.0"))
+    parser.add_argument("--host", default=os.getenv("ADAPTER_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("ADAPTER_PORT", "8005")))
     parser.add_argument("--daemon", action="store_true", help="run in background")
     parser.add_argument(

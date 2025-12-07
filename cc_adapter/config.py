@@ -25,7 +25,7 @@ def default_context_window_for(model: Optional[str]) -> int:
 
 @dataclass
 class Settings:
-    host: str = os.getenv("ADAPTER_HOST", "0.0.0.0")
+    host: str = os.getenv("ADAPTER_HOST", "127.0.0.1")
     port: int = int(os.getenv("ADAPTER_PORT", "8005"))
     model: str = os.getenv("CC_ADAPTER_MODEL", "")
     context_window: int = int(os.getenv("CONTEXT_WINDOW", "0"))
