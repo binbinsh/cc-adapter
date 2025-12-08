@@ -352,11 +352,19 @@ class AdapterGUI:
         self._update_provider_visibility()
         self.last_provider = provider
         self._auto_save()
+        self._restart_if_running()
 
     def _on_model_change(self) -> None:
         self._update_context_window_default(force=True)
         self._format_context_window_var()
         self._auto_save()
+        self._restart_if_running()
+
+    def _restart_if_running(self) -> None:
+        """Restart the server if it's currently running to apply new settings."""
+        if self.server_thread and self.server_thread.is_alive():
+            self.stop_server()
+            self.start_server()
 
     def _apply_log_level(self) -> None:
         level_name = self.log_level_var.get().upper()
