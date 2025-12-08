@@ -65,6 +65,14 @@ def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
+def _ensure_web_search(payload: Dict[str, Any]) -> None:
+    extra_body = payload.get("extra_body")
+    if not isinstance(extra_body, dict):
+        extra_body = {}
+    extra_body["web_search"] = True
+    payload["extra_body"] = extra_body
+
+
 def _build_retry_session(settings: Settings) -> requests.Session:
     session = requests.Session()
     retries = Retry(
@@ -133,6 +141,7 @@ def _post_with_retries(
 def send(payload: Dict[str, Any], settings: Settings, target_model: str, incoming: Dict[str, Any]) -> Dict[str, Any]:
     if not settings.poe_api_key:
         raise RuntimeError("POE_API_KEY not set")
+    _ensure_web_search(payload)
     clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, target_model)
     if trim_meta.get("dropped"):
         logger.warning(
@@ -164,6 +173,7 @@ def stream(
 ):
     if not settings.poe_api_key:
         raise RuntimeError("POE_API_KEY not set")
+    _ensure_web_search(payload)
     clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, requested_model)
     if trim_meta.get("dropped"):
         logger.warning(
