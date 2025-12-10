@@ -1,5 +1,6 @@
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+import copy
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,7 @@ class ModelInfo:
     context_window: int = 0
     priority: int = 100
     expose: bool = True
+    extra_body: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def target(self) -> str:
@@ -49,6 +51,7 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
         aliases=("claude-opus-4-5",),
         context_window=200_000,
         priority=30,
+        extra_body={"web_search": True},
     ),
     ModelInfo(
         provider="poe",
@@ -56,6 +59,7 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
         aliases=("claude-sonnet-4-5",),
         context_window=1_000_000,
         priority=40,
+        extra_body={"web_search": True},
     ),
     ModelInfo(
         provider="poe",
@@ -63,6 +67,7 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
         aliases=("claude-haiku-4-5", "claude-haiku-4-5-20251001"),
         context_window=200_000,
         priority=50,
+        extra_body={"web_search": True},
     ),
     # OpenRouter
     ModelInfo(
@@ -196,3 +201,19 @@ def default_context_window_for(model: Optional[str]) -> int:
     if info:
         return info.context_window
     return 0
+
+
+def default_extra_body_for(model: Optional[str]) -> Dict[str, Any]:
+    """Return provider-specific default extra_body payload settings, if any."""
+    if not model:
+        return {}
+    provider = ""
+    name = model
+    if ":" in model:
+        provider, name = model.split(":", 1)
+        provider = provider.lower()
+
+    info = find_model(provider or None, name)
+    if info and info.extra_body:
+        return copy.deepcopy(info.extra_body)
+    return {}

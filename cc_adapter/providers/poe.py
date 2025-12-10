@@ -8,7 +8,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 from ..config import Settings
-from ..converters import openai_to_anthropic
+from ..converters import openai_to_anthropic, build_poe_params
+from ..model_registry import default_extra_body_for
 from ..streaming import stream_openai_response
 from ..context_limits import enforce_context_limits
 from ..logging_utils import log_payload
@@ -65,12 +66,38 @@ def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
-def _ensure_web_search(payload: Dict[str, Any]) -> None:
-    extra_body = payload.get("extra_body")
-    if not isinstance(extra_body, dict):
-        extra_body = {}
-    extra_body["web_search"] = True
-    payload["extra_body"] = extra_body
+def _merge_extra_body(
+    payload: Dict[str, Any], incoming: Optional[Dict[str, Any]], defaults: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    merged: Dict[str, Any] = copy.deepcopy(payload)
+    extra_body: Dict[str, Any] = {}
+    if defaults:
+        extra_body.update(defaults)
+    if isinstance(merged.get("extra_body"), dict):
+        extra_body.update(merged["extra_body"])  # type: ignore[arg-type]
+
+    derived = build_poe_params(incoming or {})
+    # Merge order: defaults -> derived from request -> explicit payload extras win last.
+    final_extra = {**defaults} if defaults else {}
+    final_extra.update(derived)
+    final_extra.update(extra_body)
+    if final_extra:
+        merged["extra_body"] = final_extra
+    else:
+        merged.pop("extra_body", None)
+    return merged
+
+
+def _prepare_payload(
+    payload: Dict[str, Any],
+    incoming: Optional[Dict[str, Any]],
+    settings: Settings,
+    target_model: str,
+) -> Tuple[Dict[str, Any], Dict[str, int]]:
+    defaults = default_extra_body_for(f"poe:{target_model}")
+    enriched = _merge_extra_body(payload, incoming, defaults)
+    clean_payload = _sanitize_payload(enriched)
+    return enforce_context_limits(clean_payload, settings, target_model)
 
 
 def _build_retry_session(settings: Settings) -> requests.Session:
@@ -141,8 +168,7 @@ def _post_with_retries(
 def send(payload: Dict[str, Any], settings: Settings, target_model: str, incoming: Dict[str, Any]) -> Dict[str, Any]:
     if not settings.poe_api_key:
         raise RuntimeError("POE_API_KEY not set")
-    _ensure_web_search(payload)
-    clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, target_model)
+    clean_payload, trim_meta = _prepare_payload(payload, incoming, settings, target_model)
     if trim_meta.get("dropped"):
         logger.warning(
             "Trimmed %s message(s) for Poe context (est %s -> %s tokens, budget=%s)",
@@ -173,8 +199,7 @@ def stream(
 ):
     if not settings.poe_api_key:
         raise RuntimeError("POE_API_KEY not set")
-    _ensure_web_search(payload)
-    clean_payload, trim_meta = enforce_context_limits(_sanitize_payload(payload), settings, requested_model)
+    clean_payload, trim_meta = _prepare_payload(payload, incoming, settings, requested_model)
     if trim_meta.get("dropped"):
         logger.warning(
             "Trimmed %s message(s) for Poe context (est %s -> %s tokens, budget=%s)",

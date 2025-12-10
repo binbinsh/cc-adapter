@@ -363,6 +363,55 @@ def stream_openai_response(
         handler.close_connection = True
     except Exception as exc:
         logger.exception("Error while streaming to client: %s", exc)
+        try:
+            if not sent_start:
+                _send(
+                    "message_start",
+                    {
+                        "type": "message_start",
+                        "message": {
+                            "id": "stream-error",
+                            "type": "message",
+                            "role": "assistant",
+                            "model": requested_model or "",
+                            "metadata": incoming.get("metadata") if incoming else None,
+                            "cache_control": incoming.get("cache_control") if incoming else None,
+                        },
+                    },
+                )
+                sent_start = True
+
+            close_text_block()
+            close_thinking_block()
+            for tid, (idx, _) in tool_blocks.items():
+                _send(
+                    "content_block_stop",
+                    {"type": "content_block_stop", "index": idx},
+                )
+
+            if usage_state.get("input_tokens", 0) == 0 and usage_state.get("output_tokens", 0) == 0:
+                usage_state["output_tokens"] = _estimate_tokens_from_chars(output_char_count)
+                usage_state["input_tokens"] = _estimate_tokens_from_chars(_collect_prompt_chars(incoming))
+
+            _send(
+                "message_delta",
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "error", "stop_sequence": None},
+                    "usage": usage_state,
+                },
+            )
+            _send(
+                "error",
+                {
+                    "type": "error",
+                    "message": str(exc),
+                },
+            )
+            _send("message_stop", {"type": "message_stop"})
+            handler.wfile.flush()
+        except Exception:
+            pass
         handler.close_connection = True
     else:
         # If provider didn't return usage, estimate roughly to avoid always-zero metrics
