@@ -6,7 +6,7 @@ from unittest import mock
 
 from cc_adapter import streaming
 from cc_adapter.config import Settings
-from cc_adapter.models import resolve_provider_model
+from cc_adapter.models import available_models, resolve_provider_model
 from cc_adapter import server
 
 
@@ -39,10 +39,11 @@ class ServerHelpersTestCase(unittest.TestCase):
         settings = Settings(model="openrouter:claude-opus-4.5", poe_api_key="k1", openrouter_key="k2")
         provider, name = resolve_provider_model("claude-haiku-4.5", settings)
         self.assertEqual(provider, "openrouter")
-        self.assertEqual(name, "claude-haiku-4.5")
+        self.assertEqual(name, "anthropic/claude-haiku-4.5")
 
+    @mock.patch.dict(os.environ, {}, clear=True)
     def test_resolve_provider_model_requires_provider_for_haiku_when_unprefixed(self):
-        settings = Settings(model="poe:gpt-5.1-codex", openrouter_key="k2")
+        settings = Settings(model="poe:claude-opus-4.5", poe_api_key="", openrouter_key="k2")
         with self.assertRaises(ValueError):
             resolve_provider_model("claude-haiku-4.5", settings)
 
@@ -64,27 +65,56 @@ class ServerHelpersTestCase(unittest.TestCase):
             poe_api_key="k1",
             openrouter_key="k2",
         )
-        models = server._available_models(settings)
+        models = available_models(settings)
         self.assertIn("lmstudio:local-model", models)
         self.assertIn("poe:claude-haiku-4.5", models)
         self.assertIn("poe:claude-opus-4.5", models)
-        self.assertIn("poe:gpt-5.1-codex", models)
-        self.assertIn("poe:gpt-5.1-codex-max", models)
+        self.assertIn("poe:deepseek-v3.2", models)
+        self.assertIn("poe:glm-4.6", models)
         self.assertIn("openrouter:claude-haiku-4.5", models)
         self.assertIn("openrouter:claude-sonnet-4.5", models)
-        self.assertIn("openrouter:gpt-5.1-codex", models)
         self.assertIn("openrouter:gpt-5.1-codex-max", models)
+        self.assertIn("openrouter:glm-4.6", models)
+        self.assertNotIn("poe:gpt-5.1-codex", models)
+        self.assertNotIn("poe:gpt-5.1-codex-max", models)
+        self.assertNotIn("openrouter:gpt-5.1-codex", models)
 
-    def test_is_allowed_model_supports_anthropic_prefix(self):
-        settings = Settings(openrouter_key="k2")
-        allowed = server._is_allowed_model("openrouter", "anthropic/claude-sonnet-4.5", settings)
-        self.assertTrue(allowed)
+    def test_available_models_includes_explicit_default(self):
+        settings = Settings(model="poe:custom-model", poe_api_key="k1")
+        models = available_models(settings)
+        self.assertIn("poe:custom-model", models)
 
-    def test_is_allowed_model_supports_haiku_variants(self):
-        settings = Settings(poe_api_key="k1", openrouter_key="k2")
-        self.assertTrue(server._is_allowed_model("poe", "claude-haiku-4.5", settings))
-        self.assertTrue(server._is_allowed_model("openrouter", "claude-haiku-4-5-20251001", settings))
-        self.assertTrue(server._is_allowed_model("openrouter", "anthropic/claude-haiku-4.5", settings))
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_settings_default_model_is_opus(self):
+        settings = Settings()
+        self.assertEqual(settings.model, "poe:claude-opus-4.5")
+
+    def test_available_models_order_custom_then_claude_priority(self):
+        settings = Settings(model="poe:my-bot", poe_api_key="k1", openrouter_key="k2")
+        models = available_models(settings)
+        self.assertEqual(models[0], "poe:my-bot")
+
+        codex_deepseek_positions = [models.index(m) for m in models if "gpt-5.1-codex-max" in m or "deepseek-v3.2" in m]
+        glm_positions = [models.index(m) for m in models if "glm-4.6" in m]
+        opus_positions = [models.index(m) for m in models if "claude-opus" in m]
+        sonnet_positions = [models.index(m) for m in models if "claude-sonnet" in m]
+        haiku_positions = [models.index(m) for m in models if "claude-haiku" in m]
+
+        self.assertTrue(codex_deepseek_positions and glm_positions and opus_positions and sonnet_positions and haiku_positions)
+        self.assertLess(max(codex_deepseek_positions), min(glm_positions))
+        self.assertLess(max(glm_positions), min(opus_positions))
+        self.assertLess(max(opus_positions), min(sonnet_positions))
+        self.assertLess(max(sonnet_positions), min(haiku_positions))
+
+    def test_available_models_respects_missing_provider_keys(self):
+        settings = Settings(model="", poe_api_key="", openrouter_key="", lmstudio_model="local")
+        models = available_models(settings)
+        self.assertEqual(models, ["lmstudio:local"])
+
+    def test_canonicalize_glm_alias_for_openrouter(self):
+        provider, name = resolve_provider_model("openrouter:glm-4.6", Settings(openrouter_key="k2"))
+        self.assertEqual(provider, "openrouter")
+        self.assertEqual(name, "z-ai/glm-4.6")
 
     def test_port_available_detects_in_use(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

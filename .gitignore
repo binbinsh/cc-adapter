@@ -4,10 +4,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.so
-.Python
 .venv/
-env/
-venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
@@ -22,3 +19,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Misc
+.env

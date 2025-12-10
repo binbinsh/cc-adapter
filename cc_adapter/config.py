@@ -2,32 +2,14 @@ import os
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-
-def default_context_window_for(model: Optional[str]) -> int:
-    """Return a sensible default context window for known models."""
-    if not model:
-        return 0
-    name = model.lower()
-    if ":" in name:
-        name = name.split(":", 1)[1]
-    if "claude-haiku-4.5" in name or "claude-haiku-4-5" in name:
-        return 200_000
-    if "claude-sonnet-4.5" in name or "claude-sonnet-4-5" in name:
-        return 1_000_000
-    if "claude-opus-4.5" in name or "claude-opus-4-5" in name:
-        return 200_000
-    if "gpt-5.1-codex" in name:
-        return 400_000
-    if "gpt-oss-120b" in name:
-        return 131_072
-    return 0
+from .model_registry import default_context_window_for
 
 
 @dataclass
 class Settings:
     host: str = os.getenv("ADAPTER_HOST", "127.0.0.1")
     port: int = int(os.getenv("ADAPTER_PORT", "8005"))
-    model: str = os.getenv("CC_ADAPTER_MODEL", "")
+    model: str = os.getenv("CC_ADAPTER_MODEL", "poe:claude-opus-4.5")
     context_window: int = int(os.getenv("CONTEXT_WINDOW", "0"))
     lmstudio_base: str = os.getenv("LMSTUDIO_BASE", "http://127.0.0.1:1234/v1/chat/completions")
     lmstudio_model: str = os.getenv("LMSTUDIO_MODEL", "gpt-oss-120b")

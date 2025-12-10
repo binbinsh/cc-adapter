@@ -15,6 +15,7 @@ import requests
 from pathlib import Path
 
 from .config import Settings, apply_overrides, default_context_window_for, load_settings
+from .model_registry import DEFAULT_PROVIDER_MODELS, provider_model_slugs
 from .server import build_server, port_available
 from .logging_utils import resolve_log_level
 
@@ -76,16 +77,21 @@ class AdapterGUI:
         self.no_proxy_var = tk.StringVar(value=self.settings.no_proxy)
 
         self.start_stop_text = tk.StringVar(value="Start")
-        self.model_defaults = {
-            "lmstudio": "gpt-oss-120b",
-            "poe": "claude-sonnet-4.5",
-            "openrouter": "claude-sonnet-4.5",
-        }
-        self.provider_models = {
-            "lmstudio": ["gpt-oss-120b"],
-            "poe": ["claude-sonnet-4.5", "claude-opus-4.5", "gpt-5.1-codex", "gpt-5.1-codex-max"],
-            "openrouter": ["claude-sonnet-4.5", "claude-opus-4.5", "gpt-5.1-codex", "gpt-5.1-codex-max"],
-        }
+        self.provider_models = {}
+        for provider in self.provider_display_map.values():
+            options = []
+            if provider == "lmstudio":
+                options.append(self.settings.lmstudio_model)
+            options.extend(provider_model_slugs(provider))
+            if not options and provider in DEFAULT_PROVIDER_MODELS:
+                options.append(DEFAULT_PROVIDER_MODELS[provider])
+            seen: set[str] = set()
+            deduped: list[str] = []
+            for name in options:
+                if name and name not in seen:
+                    deduped.append(name)
+                    seen.add(name)
+            self.provider_models[provider] = deduped
         self.last_provider = self._current_provider()
         self.server_thread: Optional[threading.Thread] = None
         self.server_instance = None

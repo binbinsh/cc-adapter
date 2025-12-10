@@ -3,19 +3,19 @@
 [![PyPI Version](https://img.shields.io/pypi/v/cc-adapter)](https://pypi.org/project/cc-adapter/)
 [![Monthly Downloads](https://img.shields.io/badge/dynamic/json?url=https://pypistats.org/api/packages/cc-adapter/recent&query=data.last_month&label=downloads/month)](https://pypistats.org/packages/cc-adapter)
 
-cc-adapter lets Claude Code speak Anthropic `/v1/messages` to LM Studio, Poe, or OpenRouter. It supports streaming, tool calls, and cache-control passthrough.
+cc-adapter lets Claude Code speak Anthropic `/v1/messages` to Poe, OpenRouter or LM Studio. It supports streaming, tool calls, and cache-control passthrough.
 
 ## Tested models (quick list)
-Choose one of these thoroughly tested models (provider prefix required):
+Choose one of these thoroughly tested models:
 
-- `poe:gpt-5.1-codex-max` (**recommended**; requires Poe key)
-- `poe:claude-opus-4.5` (requires Poe key)
+- `poe:claude-opus-4.5` (<mark style="background-color: #fff59d; color: #660066;"><strong>best quality</strong></mark>; requires Poe key)
 - `poe:claude-sonnet-4.5` (requires Poe key)
-- `poe:gpt-5.1-codex` (requires Poe key)
-- `openrouter:gpt-5.1-codex-max` (requires OpenRouter key)
-- `openrouter:claude-opus-4.5` (requires OpenRouter key)
+- `poe:deepseek-v3.2` (<mark style="background-color: #fff59d; color: #660066;"><strong>best value for money</strong></mark>; requires Poe key)
+- `poe:glm-4.6` (requires Poe key)
 - `openrouter:claude-sonnet-4.5` (requires OpenRouter key)
-- `openrouter:gpt-5.1-codex` (requires OpenRouter key)
+- `openrouter:claude-opus-4.5` (requires OpenRouter key)
+- `openrouter:gpt-5.1-codex-max` (requires OpenRouter key)
+- `openrouter:glm-4.6` (requires OpenRouter key)
 - `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
 
 ## Install from PyPI (recommended)
@@ -31,8 +31,7 @@ Clone and set up a local dev environment:
 ```bash
 git clone https://github.com/binbinsh/cc-adapter.git
 cd cc-adapter/
-uv venv --python 3.12
-uv sync
+uv venv --python 3.10
 ```
 
 ## Quick start (minimal CLI)
@@ -40,7 +39,7 @@ Run the recommended Poe model and point Claude Code to the adapter:
 
 ```bash
 uv run cc-adapter --host 127.0.0.1 --port 8005 \
-  --model poe:gpt-5.1-codex-max \
+  --model poe:claude-opus-4.5 \
   --poe-api-key YOUR_POE_API_KEY \
   --daemon
 
@@ -58,7 +57,7 @@ claude
 Notes:
 - `--host` defaults to `127.0.0.1`; only use `0.0.0.0` if you must expose it.
 - Change `--port` if 8005 is taken.
-- Swap `--model` for any tested model above (ensure the matching provider keys).
+- Swap `--model` for any model from the provider.
 
 ## GUI (recommended for daily use)
 Launch the Tkinter GUI to configure and start/stop the adapter:
@@ -72,7 +71,23 @@ Set provider/model/API keys in the window, then use `Test Provider` and `Start/S
 <img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot.png" alt="CC Adapter GUI" width="800">
 
 ## CLI examples
-Common flags: `--host` (default 127.0.0.1), `--port` (default 8005), plus provider-specific API keys.
+The CLI accepts any provider-prefixed model string (e.g., `poe:any-model-name`); the GUI offers a curated drop-down list. Common flags: `--host` (default 127.0.0.1), `--port` (default 8005), plus provider-specific API keys.
+
+### Poe
+```bash
+uv run cc-adapter --host 127.0.0.1 --port 8005 \
+  --model poe:claude-opus-4.5 \
+  --poe-api-key YOUR_POE_API_KEY \
+  --daemon
+```
+
+### OpenRouter
+```bash
+uv run cc-adapter --host 127.0.0.1 --port 8005 \
+  --model openrouter:claude-opus-4.5 \
+  --openrouter-api-key YOUR_OPENROUTER_API_KEY \
+  --daemon
+```
 
 ### LM Studio
 ```bash
@@ -83,30 +98,14 @@ uv run cc-adapter --host 127.0.0.1 --port 8005 \
   --daemon
 ```
 
-### Poe
-```bash
-uv run cc-adapter --host 127.0.0.1 --port 8005 \
-  --model poe:gpt-5.1-codex-max \
-  --poe-api-key YOUR_POE_API_KEY \
-  --daemon
-```
-
-### OpenRouter
-```bash
-uv run cc-adapter --host 127.0.0.1 --port 8005 \
-  --model openrouter:gpt-5.1-codex-max \
-  --openrouter-api-key YOUR_OPENROUTER_API_KEY \
-  --daemon
-```
-
 ## Proxy support (optional)
-Only set these if your network blocks provider calls:
+Only set these if your network blocks the provider URLs:
 
 ```bash
 export HTTP_PROXY=http://localhost:port
 export HTTPS_PROXY=http://localhost:port
 export NO_PROXY=127.0.0.1,localhost
-uv run cc-adapter --model poe:claude-sonnet-4.5 --poe-api-key YOUR_POE_API_KEY
+uv run cc-adapter --model poe:claude-opus-4.5 --poe-api-key YOUR_POE_API_KEY
 ```
 
 ## Run Claude Code
