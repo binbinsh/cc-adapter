@@ -15,7 +15,7 @@ class ServerHelpersTestCase(unittest.TestCase):
         settings = Settings(model="poe:claude-opus-4.5")
         provider, name = resolve_provider_model("poe:claude-sonnet-4.5", settings)
         self.assertEqual(provider, "poe")
-        self.assertEqual(name, "claude-sonnet-4.5")
+        self.assertEqual(name, "claude-opus-4.5")
 
     def test_resolve_provider_model_uses_config_when_unprefixed(self):
         settings = Settings(model="poe:claude-opus-4.5")
@@ -35,6 +35,18 @@ class ServerHelpersTestCase(unittest.TestCase):
         self.assertEqual(provider, "poe")
         self.assertEqual(name, "claude-haiku-4.5")
 
+    def test_resolve_provider_model_routes_non_haiku_to_selected_model(self):
+        settings = Settings(model="poe:deepseek-v3.2")
+        provider, name = resolve_provider_model("openrouter:claude-sonnet-4.5", settings)
+        self.assertEqual(provider, "poe")
+        self.assertEqual(name, "deepseek-v3.2")
+
+    def test_resolve_provider_model_honors_requested_provider_for_haiku(self):
+        settings = Settings(model="poe:deepseek-v3.2", openrouter_key="k2")
+        provider, name = resolve_provider_model("openrouter:claude-haiku-4.5", settings)
+        self.assertEqual(provider, "openrouter")
+        self.assertEqual(name, "anthropic/claude-haiku-4.5")
+
     def test_resolve_provider_model_prefers_selected_provider_openrouter(self):
         settings = Settings(model="openrouter:claude-opus-4.5", poe_api_key="k1", openrouter_key="k2")
         provider, name = resolve_provider_model("claude-haiku-4.5", settings)
@@ -44,20 +56,21 @@ class ServerHelpersTestCase(unittest.TestCase):
     @mock.patch.dict(os.environ, {}, clear=True)
     def test_resolve_provider_model_requires_provider_for_haiku_when_unprefixed(self):
         settings = Settings(model="poe:claude-opus-4.5", poe_api_key="", openrouter_key="k2")
-        with self.assertRaises(ValueError):
-            resolve_provider_model("claude-haiku-4.5", settings)
+        provider, name = resolve_provider_model("claude-haiku-4.5", settings)
+        self.assertEqual(provider, "poe")
+        self.assertEqual(name, "claude-haiku-4.5")
 
     def test_resolve_provider_model_maps_haiku_to_lmstudio_default(self):
         settings = Settings(model="lmstudio:gpt-oss-120b", lmstudio_model="local-model")
         provider, name = resolve_provider_model("claude-haiku-4.5", settings)
         self.assertEqual(provider, "lmstudio")
-        self.assertEqual(name, "local-model")
+        self.assertEqual(name, "gpt-oss-120b")
 
     def test_resolve_provider_model_maps_anthropic_haiku_to_lmstudio_default(self):
         settings = Settings(model="lmstudio:gpt-oss-120b", lmstudio_model="offline-fallback")
         provider, name = resolve_provider_model("anthropic/claude-haiku-4.5", settings)
         self.assertEqual(provider, "lmstudio")
-        self.assertEqual(name, "offline-fallback")
+        self.assertEqual(name, "gpt-oss-120b")
 
     def test_available_models_reflect_keys(self):
         settings = Settings(
@@ -112,7 +125,8 @@ class ServerHelpersTestCase(unittest.TestCase):
         self.assertEqual(models, ["lmstudio:local"])
 
     def test_canonicalize_glm_alias_for_openrouter(self):
-        provider, name = resolve_provider_model("openrouter:glm-4.6", Settings(openrouter_key="k2"))
+        settings = Settings(model="openrouter:glm-4.6", openrouter_key="k2")
+        provider, name = resolve_provider_model("openrouter:glm-4.6", settings)
         self.assertEqual(provider, "openrouter")
         self.assertEqual(name, "z-ai/glm-4.6")
 

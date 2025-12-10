@@ -8,9 +8,9 @@ cc-adapter lets Claude Code speak Anthropic `/v1/messages` to Poe, OpenRouter or
 ## Tested models (quick list)
 Choose one of these thoroughly tested models:
 
-- `poe:claude-opus-4.5` (<mark style="background-color: #fff59d; color: #660066;"><strong>best quality</strong></mark>; requires Poe key)
+- **`poe:claude-opus-4.5` (best quality; requires Poe key)**
 - `poe:claude-sonnet-4.5` (requires Poe key)
-- `poe:deepseek-v3.2` (<mark style="background-color: #fff59d; color: #660066;"><strong>best value for money</strong></mark>; requires Poe key)
+- **`poe:deepseek-v3.2` (best value for money; requires Poe key)**
 - `poe:glm-4.6` (requires Poe key)
 - `openrouter:claude-sonnet-4.5` (requires OpenRouter key)
 - `openrouter:claude-opus-4.5` (requires OpenRouter key)

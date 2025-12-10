@@ -4,26 +4,9 @@ from .config import Settings
 from .model_registry import canonicalize_model, find_model, provider_models
 
 
-def _default_provider(settings: Settings) -> str:
-    if settings.model and ":" in settings.model:
-        return settings.model.split(":", 1)[0].lower()
-    return ""
-
-
 def _display_slug(provider: str, name: str) -> str:
     match = find_model(provider, name)
     return match.slug if match else name
-
-
-def _select_haiku_provider(settings: Settings) -> str:
-    preferred = _default_provider(settings)
-    if preferred == "poe" and settings.poe_api_key:
-        return "poe"
-    if preferred == "openrouter" and settings.openrouter_key:
-        return "openrouter"
-    if preferred == "lmstudio":
-        return "lmstudio"
-    raise ValueError("No valid provider configured for Claude Haiku model.")
 
 
 def available_models(settings: Settings) -> list[str]:
@@ -65,32 +48,27 @@ def available_models(settings: Settings) -> list[str]:
 
 
 def resolve_provider_model(model: Optional[str], settings: Settings) -> Tuple[str, str]:
-    """Return (provider, upstream_model). Model may be prefixed or rely on the configured default provider."""
-    target_model = model or settings.model
-    if not target_model:
+    """Return (provider, upstream_model) while favoring the selected model by default."""
+    default_model = settings.model
+    if not default_model:
         raise ValueError("Model is required and must include provider prefix (e.g., poe:claude-opus-4.5)")
+    if ":" not in default_model:
+        raise ValueError("Model must include provider prefix (e.g., poe:claude-opus-4.5)")
 
-    if ":" in target_model:
-        provider, name = target_model.split(":", 1)
-        provider = provider.lower()
-        if provider not in {"poe", "lmstudio", "openrouter"}:
-            raise ValueError(f"Unsupported provider prefix: {provider}")
+    default_provider, default_name = default_model.split(":", 1)
+    default_provider = default_provider.lower()
+    if default_provider not in {"poe", "lmstudio", "openrouter"}:
+        raise ValueError(f"Unsupported provider prefix: {default_provider}")
 
-        if provider == "lmstudio" and "claude-haiku" in name.lower():
-            return "lmstudio", settings.lmstudio_model
-        return provider, canonicalize_model(provider, name)
+    requested = (model or "").strip()
+    if requested:
+        req_provider = default_provider
+        req_name = requested
+        if ":" in requested:
+            req_provider, req_name = requested.split(":", 1)
+            req_provider = req_provider.lower()
 
-    lowered = target_model.lower()
-    if "claude-haiku" in lowered:
-        provider = _select_haiku_provider(settings)
-        if provider == "lmstudio":
-            return "lmstudio", settings.lmstudio_model
-        return provider, canonicalize_model(provider, target_model)
+        if req_provider in {"poe", "openrouter"} and "claude-haiku" in req_name.lower():
+            return req_provider, canonicalize_model(req_provider, req_name)
 
-    provider = _default_provider(settings)
-    if provider in {"poe", "lmstudio", "openrouter"}:
-        if provider == "lmstudio":
-            return provider, target_model
-        return provider, canonicalize_model(provider, target_model)
-
-    raise ValueError("Model must include provider prefix (e.g., poe:claude-opus-4.5)")
+    return default_provider, canonicalize_model(default_provider, default_name)
