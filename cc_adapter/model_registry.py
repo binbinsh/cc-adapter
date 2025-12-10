@@ -35,22 +35,10 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
     # Poe
     ModelInfo(
         provider="poe",
-        slug="deepseek-v3.2",
-        context_window=163_840,
-        priority=10,
-    ),
-    ModelInfo(
-        provider="poe",
-        slug="glm-4.6",
-        context_window=202_752,
-        priority=20,
-    ),
-    ModelInfo(
-        provider="poe",
         slug="claude-opus-4.5",
         aliases=("claude-opus-4-5",),
         context_window=200_000,
-        priority=30,
+        priority=10,
         extra_body={"web_search": True},
     ),
     ModelInfo(
@@ -58,7 +46,7 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
         slug="claude-sonnet-4.5",
         aliases=("claude-sonnet-4-5",),
         context_window=1_000_000,
-        priority=40,
+        priority=20,
         extra_body={"web_search": True},
     ),
     ModelInfo(
@@ -66,37 +54,43 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
         slug="claude-haiku-4.5",
         aliases=("claude-haiku-4-5", "claude-haiku-4-5-20251001"),
         context_window=200_000,
+        priority=30,
+        extra_body={"web_search": True},
+    ),
+    ModelInfo(
+        provider="poe",
+        slug="deepseek-v3.2",
+        context_window=163_840,
+        priority=40,
+    ),
+    ModelInfo(
+        provider="poe",
+        slug="glm-4.6",
+        context_window=202_752,
         priority=50,
+    ),
+    ModelInfo(
+        provider="poe",
+        slug="gpt-5-pro",
+        aliases=("gpt-5-pro-2025-10-06",),
+        context_window=400_000,
+        priority=99,
         extra_body={"web_search": True},
     ),
     # OpenRouter
     ModelInfo(
         provider="openrouter",
-        slug="gpt-5.1-codex-max",
-        upstream="openai/gpt-5.1-codex-max",
-        context_window=400_000,
-        priority=10,
-    ),
-    ModelInfo(
-        provider="openrouter",
-        slug="glm-4.6",
-        upstream="z-ai/glm-4.6",
-        context_window=202_752,
-        priority=20,
-    ),
-    ModelInfo(
-        provider="openrouter",
         slug="claude-opus-4.5",
         upstream="anthropic/claude-opus-4.5",
         context_window=200_000,
-        priority=30,
+        priority=10,
     ),
     ModelInfo(
         provider="openrouter",
         slug="claude-sonnet-4.5",
         upstream="anthropic/claude-sonnet-4.5",
         context_window=1_000_000,
-        priority=40,
+        priority=20,
     ),
     ModelInfo(
         provider="openrouter",
@@ -104,7 +98,28 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
         upstream="anthropic/claude-haiku-4.5",
         aliases=("claude-haiku-4-5", "claude-haiku-4-5-20251001"),
         context_window=200_000,
+        priority=30,
+    ),
+    ModelInfo(
+        provider="openrouter",
+        slug="gpt-5.1-codex-max",
+        upstream="openai/gpt-5.1-codex-max",
+        context_window=400_000,
+        priority=40,
+    ),
+    ModelInfo(
+        provider="openrouter",
+        slug="glm-4.6",
+        upstream="z-ai/glm-4.6",
+        context_window=202_752,
         priority=50,
+    ),
+    ModelInfo(
+        provider="openrouter",
+        slug="gpt-5-pro",
+        upstream="openai/gpt-5-pro",
+        context_window=400_000,
+        priority=99,
     ),
 )
 

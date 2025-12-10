@@ -17,6 +17,8 @@ Choose one of these thoroughly tested models:
 - `openrouter:gpt-5.1-codex-max` (requires OpenRouter key)
 - `openrouter:glm-4.6` (requires OpenRouter key)
 - `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
+- `poe:gpt-5-pro` (requires Poe key; **extremely expensive!**)
+- `openrouter:gpt-5-pro` (requires OpenRouter key; **extremely expensive!**)
 
 ## Install from PyPI (recommended)
 Quickest way to get cc-adapter:

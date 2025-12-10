@@ -24,13 +24,13 @@ class ServerHelpersTestCase(unittest.TestCase):
         self.assertEqual(name, "claude-opus-4.5")
 
     def test_resolve_provider_model_auto_prefers_poe_haiku(self):
-        settings = Settings(model="poe:gpt-5.1-codex", poe_api_key="k1")
+        settings = Settings(model="poe:gpt-5-pro", poe_api_key="k1")
         provider, name = resolve_provider_model("claude-haiku-4.5", settings)
         self.assertEqual(provider, "poe")
         self.assertEqual(name, "claude-haiku-4.5")
 
     def test_resolve_provider_model_auto_normalizes_haiku_alias(self):
-        settings = Settings(model="poe:gpt-5.1-codex", poe_api_key="k1")
+        settings = Settings(model="poe:gpt-5-pro", poe_api_key="k1")
         provider, name = resolve_provider_model("claude-haiku-4-5-20251001", settings)
         self.assertEqual(provider, "poe")
         self.assertEqual(name, "claude-haiku-4.5")
@@ -80,10 +80,12 @@ class ServerHelpersTestCase(unittest.TestCase):
         )
         models = available_models(settings)
         self.assertIn("lmstudio:local-model", models)
+        self.assertIn("poe:gpt-5-pro", models)
         self.assertIn("poe:claude-haiku-4.5", models)
         self.assertIn("poe:claude-opus-4.5", models)
         self.assertIn("poe:deepseek-v3.2", models)
         self.assertIn("poe:glm-4.6", models)
+        self.assertIn("openrouter:gpt-5-pro", models)
         self.assertIn("openrouter:claude-haiku-4.5", models)
         self.assertIn("openrouter:claude-sonnet-4.5", models)
         self.assertIn("openrouter:gpt-5.1-codex-max", models)
@@ -107,17 +109,32 @@ class ServerHelpersTestCase(unittest.TestCase):
         models = available_models(settings)
         self.assertEqual(models[0], "poe:my-bot")
 
-        codex_deepseek_positions = [models.index(m) for m in models if "gpt-5.1-codex-max" in m or "deepseek-v3.2" in m]
+        codex_positions = [
+            models.index(m)
+            for m in models
+            if "gpt-5.1-codex-max" in m or "deepseek-v3.2" in m
+        ]
         glm_positions = [models.index(m) for m in models if "glm-4.6" in m]
+        gpt5pro_positions = [models.index(m) for m in models if "gpt-5-pro" in m]
         opus_positions = [models.index(m) for m in models if "claude-opus" in m]
         sonnet_positions = [models.index(m) for m in models if "claude-sonnet" in m]
         haiku_positions = [models.index(m) for m in models if "claude-haiku" in m]
 
-        self.assertTrue(codex_deepseek_positions and glm_positions and opus_positions and sonnet_positions and haiku_positions)
-        self.assertLess(max(codex_deepseek_positions), min(glm_positions))
-        self.assertLess(max(glm_positions), min(opus_positions))
+        self.assertTrue(
+            codex_positions
+            and glm_positions
+            and gpt5pro_positions
+            and opus_positions
+            and sonnet_positions
+            and haiku_positions
+        )
+        # Claudes (opus/sonnet/haiku) should lead the frontier stack, followed by codex/deepseek,
+        # then GLM, and finally gpt-5-pro at the tail.
         self.assertLess(max(opus_positions), min(sonnet_positions))
         self.assertLess(max(sonnet_positions), min(haiku_positions))
+        self.assertLess(max(haiku_positions), min(codex_positions))
+        self.assertLess(max(codex_positions), min(glm_positions))
+        self.assertLess(max(glm_positions), min(gpt5pro_positions))
 
     def test_available_models_respects_missing_provider_keys(self):
         settings = Settings(model="", poe_api_key="", openrouter_key="", lmstudio_model="local")
