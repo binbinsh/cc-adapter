@@ -4,6 +4,7 @@ import os
 import threading
 from pathlib import Path
 from typing import List, Tuple
+from dataclasses import replace
 
 import pytest
 
@@ -71,41 +72,36 @@ def live_settings() -> Tuple[Settings, List[str]]:
     return settings, models
 
 
-@pytest.fixture(scope="session")
-def live_server(live_settings):
-    settings, _models = live_settings
-    http_server, thread = _start_server(settings)
-    try:
-        yield http_server, thread, _models
-    finally:
-        _stop_server(http_server, thread)
-
-
-def test_gui_models_connectivity(live_server, capsys):
-    http_server, _thread, models = live_server
-    host, port = http_server.server_address
+def test_gui_models_connectivity(live_settings, capsys):
+    base_settings, models = live_settings
     for model in models:
-        conn = http.client.HTTPConnection(host, port, timeout=60)
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": "Who are you? (respond in English)"}],
-            "max_tokens": 16,
-        }
-        body = json.dumps(payload).encode("utf-8")
-        conn.request("POST", "/v1/messages", body=body, headers={"Content-Type": "application/json"})
-        resp = conn.getresponse()
-        data = resp.read().decode("utf-8")
-        conn.close()
+        settings = replace(base_settings, model=model, port=0)
+        http_server, thread = _start_server(settings)
+        host, port = http_server.server_address
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=60)
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "Who are you? (respond in English)"}],
+                "max_tokens": 16,
+            }
+            body = json.dumps(payload).encode("utf-8")
+            conn.request("POST", "/v1/messages", body=body, headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            data = resp.read().decode("utf-8")
+            conn.close()
 
-        snippet = " ".join(data.split())
-        with capsys.disabled():
-            print(f"[live-test] {model} -> HTTP {resp.status} | {snippet}")
+            snippet = " ".join(data.split())
+            with capsys.disabled():
+                print(f"[live-test] {model} -> HTTP {resp.status} | {snippet}")
 
-        if resp.status == 400 and "not a valid model" in data.lower():
-            pytest.skip(f"{model} not accepted by provider: {snippet}")
+            if resp.status == 400 and "not a valid model" in data.lower():
+                pytest.skip(f"{model} not accepted by provider: {snippet}")
 
-        assert resp.status == 200, f"{model} -> {snippet}"
-        parsed = json.loads(data)
-        assert "error" not in parsed, f"{model} -> {snippet}"
-        content = parsed.get("content") or []
-        assert content, f"No content returned for {model}: {parsed}"
+            assert resp.status == 200, f"{model} -> {snippet}"
+            parsed = json.loads(data)
+            assert "error" not in parsed, f"{model} -> {snippet}"
+            content = parsed.get("content") or []
+            assert content, f"No content returned for {model}: {parsed}"
+        finally:
+            _stop_server(http_server, thread)

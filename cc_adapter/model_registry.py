@@ -71,8 +71,7 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
     ),
     ModelInfo(
         provider="poe",
-        slug="gpt-5-pro",
-        aliases=("gpt-5-pro-2025-10-06",),
+        slug="gpt-5.2-pro",
         context_window=400_000,
         priority=99,
         extra_body={"web_search": True},
@@ -102,8 +101,8 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
     ),
     ModelInfo(
         provider="openrouter",
-        slug="gpt-5.1-codex-max",
-        upstream="openai/gpt-5.1-codex-max",
+        slug="gpt-5.2",
+        upstream="openai/gpt-5.2",
         context_window=400_000,
         priority=40,
     ),
@@ -116,8 +115,8 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
     ),
     ModelInfo(
         provider="openrouter",
-        slug="gpt-5-pro",
-        upstream="openai/gpt-5-pro",
+        slug="gpt-5.2-pro",
+        upstream="openai/gpt-5.2-pro",
         context_window=400_000,
         priority=99,
     ),
