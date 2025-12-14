@@ -3,7 +3,7 @@
 [![PyPI Version](https://img.shields.io/pypi/v/cc-adapter)](https://pypi.org/project/cc-adapter/)
 [![Monthly Downloads](https://img.shields.io/badge/dynamic/json?url=https://pypistats.org/api/packages/cc-adapter/recent&query=data.last_month&label=downloads/month)](https://pypistats.org/packages/cc-adapter)
 
-cc-adapter lets Claude Code speak Anthropic `/v1/messages` to Poe, OpenRouter or LM Studio. It supports streaming, tool calls, and cache-control passthrough.
+cc-adapter lets Claude Code speak Anthropic `/v1/messages` to Poe, OpenRouter, OpenAI Codex subscription or LM Studio. It supports streaming, tool calls, and cache-control passthrough.
 
 ## Tested models (quick list)
 Choose one of these thoroughly tested models:
