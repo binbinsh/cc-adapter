@@ -8,6 +8,7 @@ cc-adapter lets Claude Code speak Anthropic `/v1/messages` to Poe, OpenRouter or
 ## Tested models (quick list)
 Choose one of these thoroughly tested models:
 
+- **`codex:gpt-5.2-xhigh` (requires OpenAI Codex Subscription)**
 - **`poe:claude-opus-4.5` (best quality; requires Poe key)**
 - `poe:claude-sonnet-4.5` (requires Poe key)
 - **`poe:deepseek-v3.2` (best value for money; requires Poe key)**
@@ -36,6 +37,30 @@ cd cc-adapter/
 uv venv --python 3.10
 ```
 
+## GUI (recommended for daily use)
+Launch the Tkinter GUI to configure and start/stop the adapter:
+
+```bash
+uv run cc-adapter-gui
+```
+
+Set provider/model/API keys in the window, then use `Test Provider` and `Start/Stop`.
+
+<img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot-01.png" alt="CC Adapter GUI" width="800">
+
+## OpenAI Codex (ChatGPT OAuth)
+
+This provider uses **ChatGPT OAuth** (subscription-based) to call the Codex backend. You do **not** need an `OPENAI_API_KEY`.
+
+```bash
+cc-adapter-codex-login
+uv run cc-adapter --model codex:gpt-5.1-codex-mini
+```
+
+GUI: choose provider `OpenAI Codex`, then click `Login` and `Start`.
+
+<img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot-02.png" alt="CC Adapter GUI" width="800">
+
 ## Quick start (minimal CLI)
 Run the recommended Poe model and point Claude Code to the adapter:
 
@@ -60,17 +85,6 @@ Notes:
 - `--host` defaults to `127.0.0.1`; only use `0.0.0.0` if you must expose it.
 - Change `--port` if 8005 is taken.
 - Swap `--model` for any model from the provider.
-
-## GUI (recommended for daily use)
-Launch the Tkinter GUI to configure and start/stop the adapter:
-
-```bash
-uv run cc-adapter-gui
-```
-
-Set provider/model/API keys in the window, then use `Test Provider` and `Start/Stop`.
-
-<img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot.png" alt="CC Adapter GUI" width="800">
 
 ## CLI examples
 The CLI accepts any provider-prefixed model string (e.g., `poe:any-model-name`); the GUI offers a curated drop-down list. Common flags: `--host` (default 127.0.0.1), `--port` (default 8005), plus provider-specific API keys.

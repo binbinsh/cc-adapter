@@ -8,16 +8,18 @@ import json
 import logging
 import os
 import sys
+import threading
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 from subprocess import Popen, DEVNULL
 
 from .config import Settings, load_settings, apply_overrides
-from .models import available_models, resolve_provider_model
+from .models import available_models, normalize_model_spec, resolve_provider_model
 from .converters import anthropic_to_openai, openai_to_anthropic
-from .providers import lmstudio, poe, openrouter
+from .providers import lmstudio, poe, openrouter, codex
 from . import streaming
 from .logging_utils import log_payload, resolve_log_level
 
@@ -27,10 +29,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cc-adapter")
 
+CODEX_HAIKU_FALLBACK_MODEL = "gpt-5.1-codex-mini"
+
+def _effective_codex_settings(
+    settings: Settings,
+    requested_model: Any,
+    upstream_model: str,
+) -> tuple[Settings, str]:
+    requested_text = str(requested_model or "")
+    if not requested_text or "claude-haiku" not in requested_text.lower():
+        return settings, upstream_model
+    if not str(getattr(settings, "model", "") or "").lower().startswith("codex:"):
+        return settings, upstream_model
+    return replace(settings, model=f"codex:{CODEX_HAIKU_FALLBACK_MODEL}"), CODEX_HAIKU_FALLBACK_MODEL
+
+
 def port_available(host: str, port: int) -> bool:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(1.0)
     try:
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except Exception:
+            pass
         sock.bind((host, port))
         return True
     except OSError:
@@ -72,6 +93,10 @@ class AdapterHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         logger.info("%s - %s", self.client_address[0], format % args)
 
+    def _client_is_loopback(self) -> bool:
+        host = str((self.client_address[0] or "")).strip()
+        return host == "127.0.0.1" or host == "::1" or host.startswith("127.")
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/health":
@@ -99,6 +124,25 @@ class AdapterHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/shutdown":
+            if not self._client_is_loopback():
+                return _json_response(self, 403, {"error": "Forbidden"})
+
+            _json_response(self, 200, {"status": "shutting_down"})
+
+            def _shutdown():
+                try:
+                    self.server.shutdown()
+                except Exception:
+                    logger.exception("Shutdown request failed")
+                try:
+                    self.server.server_close()
+                except Exception:
+                    pass
+
+            threading.Thread(target=_shutdown, daemon=True).start()
+            self.close_connection = True
+            return
         if parsed.path == "/v1/messages/count_tokens":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -129,6 +173,16 @@ class AdapterHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             return _json_response(self, 400, {"error": str(exc)})
 
+        effective_settings = self.settings
+        codex_haiku_override = ""
+        if provider == "codex":
+            effective_settings, effective_model = _effective_codex_settings(
+                self.settings, requested_model, target_model
+            )
+            if effective_model != target_model:
+                codex_haiku_override = effective_model
+                target_model = effective_model
+
         resolution_bits = []
         if requested_model and requested_model != target_model:
             resolution_bits.append(f"requested={requested_model}")
@@ -141,6 +195,8 @@ class AdapterHandler(BaseHTTPRequestHandler):
             and target_model == self.settings.lmstudio_model
         ):
             resolution_bits.append("haiku->lmstudio_default")
+        if codex_haiku_override:
+            resolution_bits.append(f"haiku->{codex_haiku_override}")
         suffix = f" ({'; '.join(resolution_bits)})" if resolution_bits else ""
         logger.info("Resolved model %s:%s%s", provider, target_model, suffix)
 
@@ -181,6 +237,20 @@ class AdapterHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 logger.exception("OpenRouter request failed")
                 return _json_response(self, 502, {"error": f"OpenRouter error: {exc}"})
+
+        # OpenAI Codex (ChatGPT OAuth)
+        if provider == "codex":
+            if openai_payload.get("stream"):
+                return self._handle_codex_stream(openai_payload, target_model, incoming, effective_settings)
+            try:
+                codex_response = codex.send(openai_payload, effective_settings, target_model)
+                outgoing = openai_to_anthropic(codex_response, target_model, incoming)
+                log_payload(logger, "Codex response", codex_response)
+                log_payload(logger, "Responding to client", outgoing)
+                return _json_response(self, 200, outgoing)
+            except Exception as exc:
+                logger.exception("Codex request failed")
+                return _json_response(self, 502, {"error": f"Codex error: {exc}"})
 
         # LM Studio
         if openai_payload.get("stream"):
@@ -232,6 +302,23 @@ class AdapterHandler(BaseHTTPRequestHandler):
             logger.exception("OpenRouter stream failed")
             return _json_response(self, 502, {"error": f"OpenRouter error: {exc}"})
 
+    def _handle_codex_stream(
+        self,
+        payload: Dict[str, Any],
+        target_model: str,
+        incoming: Dict[str, Any],
+        settings: Optional[Settings] = None,
+    ):
+        try:
+            return codex.stream(payload, settings or self.settings, target_model, incoming, self, logger)
+        except (BrokenPipeError, ConnectionResetError):
+            logger.info("Client disconnected during Codex stream")
+            self.close_connection = True
+            return
+        except Exception as exc:
+            logger.exception("Codex stream failed")
+            return _json_response(self, 502, {"error": f"Codex error: {exc}"})
+
     def _handle_lm_stream(
         self, payload: Dict[str, Any], target_model: str, incoming: Dict[str, Any]
     ):
@@ -270,15 +357,65 @@ def build_server(settings: Settings) -> AdapterHTTPServer:
     return server
 
 
+def _ensure_codex_login_if_needed(settings: Settings, no_browser: bool, allow_interactive: bool) -> None:
+    model = (settings.model or "").strip()
+    if not model.lower().startswith("codex:"):
+        return
+
+    auth_mode = str(getattr(settings, "codex_auth", "") or "").strip().lower()
+    env_present = bool(
+        getattr(settings, "codex_access_token", "")
+        and getattr(settings, "codex_refresh_token", "")
+        and int(getattr(settings, "codex_expires_at_ms", 0) or 0) > 0
+    )
+
+    from .codex_oauth import load_tokens
+
+    file_present = load_tokens() is not None
+
+    if auth_mode in {"env", "token", "tokens"}:
+        if not env_present:
+            raise RuntimeError(
+                "Codex auth mode is env but tokens are missing (set OPENAI_CODEX_ACCESS_TOKEN/OPENAI_CODEX_REFRESH_TOKEN/OPENAI_CODEX_EXPIRES_AT_MS)."
+            )
+        return
+
+    if auth_mode in {"oauth", "login", "file", "stored"}:
+        if file_present:
+            return
+        if not allow_interactive:
+            raise RuntimeError("OpenAI Codex OAuth not configured (run cc-adapter-codex-login).")
+        logger.info("OpenAI Codex OAuth not found. Starting OAuth login flow...")
+        from .codex_auth import login
+
+        login(no_browser=no_browser)
+        return
+
+    # auto
+    if env_present or file_present:
+        return
+    if not allow_interactive:
+        raise RuntimeError("OpenAI Codex OAuth not configured (run cc-adapter-codex-login).")
+    logger.info("OpenAI Codex OAuth not found. Starting OAuth login flow...")
+    from .codex_auth import login
+
+    login(no_browser=no_browser)
+
+
 def main():
-    parser = argparse.ArgumentParser(description="LM Studio / Poe / OpenRouter adapter")
+    parser = argparse.ArgumentParser(description="LM Studio / Poe / OpenRouter / OpenAI Codex adapter")
     parser.add_argument("--host", default=os.getenv("ADAPTER_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("ADAPTER_PORT", "8005")))
     parser.add_argument("--daemon", action="store_true", help="run in background")
     parser.add_argument(
         "--model",
         required=False,
-        help="Required default model with provider prefix (e.g., poe:claude-opus-4.5); request must include model if this is omitted. Can also set CC_ADAPTER_MODEL.",
+        help="Default model as provider:model (e.g., poe:claude-opus-4.5) or provider-only shorthand (e.g., codex:). Can also set CC_ADAPTER_MODEL.",
+    )
+    parser.add_argument(
+        "--provider",
+        required=False,
+        help="Provider prefix to pair with an unprefixed --model (poe|lmstudio|openrouter|codex). Example: --provider codex --model gpt-5.2-high",
     )
     parser.add_argument(
         "--context-window",
@@ -295,7 +432,53 @@ def main():
     parser.add_argument("--poe-retry-backoff", type=float, help="Seconds between retry attempts")
     parser.add_argument("--openrouter-api-key", help="OpenRouter API key")
     parser.add_argument("--openrouter-base", help="OpenRouter base URL")
+    parser.add_argument("--codex-base-url", help="OpenAI Codex base URL (ChatGPT backend)")
+    parser.add_argument(
+        "--codex-auth",
+        choices=["auto", "oauth", "env"],
+        help="Codex auth mode: auto (env tokens or stored OAuth), oauth (stored OAuth only), env (env tokens only).",
+    )
+    parser.add_argument(
+        "--codex-no-browser",
+        action="store_true",
+        help="Do not attempt to open a browser during Codex OAuth login (manual paste fallback).",
+    )
     args = parser.parse_args()
+
+    model_arg = args.model
+    provider_arg = str(getattr(args, "provider", "") or "").strip()
+    if provider_arg:
+        provider = provider_arg.rstrip(":").lower()
+        if provider not in {"poe", "lmstudio", "openrouter", "codex"}:
+            parser.error(f"Unsupported provider: {provider_arg}")
+        if model_arg:
+            if ":" in model_arg:
+                model_provider = model_arg.split(":", 1)[0].lower()
+                if model_provider != provider:
+                    parser.error(f"--provider {provider_arg} conflicts with --model {model_arg}")
+            else:
+                model_arg = f"{provider}:{model_arg}"
+        else:
+            model_arg = f"{provider}:"
+    model_arg = normalize_model_spec(model_arg)
+
+    overrides = {
+        "host": args.host,
+        "port": args.port,
+        "model": model_arg,
+        "context_window": args.context_window,
+        "lmstudio_base": args.lmstudio_base,
+        "lmstudio_model": args.lmstudio_model,
+        "lmstudio_timeout": args.lmstudio_timeout,
+        "poe_api_key": args.poe_api_key,
+        "poe_base_url": args.poe_base_url,
+        "poe_max_retries": args.poe_max_retries,
+        "poe_retry_backoff": args.poe_retry_backoff,
+        "openrouter_key": args.openrouter_api_key,
+        "openrouter_base": args.openrouter_base,
+        "codex_base_url": args.codex_base_url,
+        "codex_auth": args.codex_auth,
+    }
 
     if args.daemon:
         if not port_available(args.host, args.port):
@@ -305,9 +488,20 @@ def main():
                 args.port,
             )
             sys.exit(1)
+        try:
+            settings = apply_overrides(load_settings(), overrides)
+            settings.model = normalize_model_spec(settings.model) or settings.model
+            _ensure_codex_login_if_needed(
+                settings,
+                no_browser=bool(args.codex_no_browser),
+                allow_interactive=sys.stdin.isatty(),
+            )
+        except Exception as exc:
+            logger.error("Codex authentication failed: %s", exc)
+            sys.exit(1)
         cmd = [sys.executable, "-m", "cc_adapter.server", "--host", args.host, "--port", str(args.port)]
-        if args.model:
-            cmd.extend(["--model", args.model])
+        if model_arg:
+            cmd.extend(["--model", model_arg])
         if args.context_window:
             cmd.extend(["--context-window", str(args.context_window)])
         if args.lmstudio_base:
@@ -328,6 +522,10 @@ def main():
             cmd.extend(["--openrouter-api-key", args.openrouter_api_key])
         if args.openrouter_base:
             cmd.extend(["--openrouter-base", args.openrouter_base])
+        if args.codex_base_url:
+            cmd.extend(["--codex-base-url", args.codex_base_url])
+        if args.codex_auth:
+            cmd.extend(["--codex-auth", args.codex_auth])
         proc = Popen(cmd, stdout=DEVNULL, stderr=DEVNULL, stdin=DEVNULL, close_fds=True)
         print(f"Started daemon pid={proc.pid}")
         return
@@ -340,23 +538,17 @@ def main():
         )
         sys.exit(1)
 
-    settings = load_settings()
-    overrides = {
-        "host": args.host,
-        "port": args.port,
-        "model": args.model,
-        "context_window": args.context_window,
-        "lmstudio_base": args.lmstudio_base,
-        "lmstudio_model": args.lmstudio_model,
-        "lmstudio_timeout": args.lmstudio_timeout,
-        "poe_api_key": args.poe_api_key,
-        "poe_base_url": args.poe_base_url,
-        "poe_max_retries": args.poe_max_retries,
-        "poe_retry_backoff": args.poe_retry_backoff,
-        "openrouter_key": args.openrouter_api_key,
-        "openrouter_base": args.openrouter_base,
-    }
-    settings = apply_overrides(settings, overrides)
+    settings = apply_overrides(load_settings(), overrides)
+    settings.model = normalize_model_spec(settings.model) or settings.model
+    try:
+        _ensure_codex_login_if_needed(
+            settings,
+            no_browser=bool(args.codex_no_browser),
+            allow_interactive=sys.stdin.isatty(),
+        )
+    except Exception as exc:
+        logger.error("Codex authentication failed: %s", exc)
+        sys.exit(1)
     try:
         run_server(settings)
     except OSError:

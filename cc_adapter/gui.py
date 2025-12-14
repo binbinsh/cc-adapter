@@ -4,9 +4,11 @@ import os
 import queue
 import threading
 import time
+import webbrowser
 from importlib.resources import as_file, files
 import tkinter as tk
 from tkinter import messagebox, ttk
+from tkinter import simpledialog
 from tkinter.scrolledtext import ScrolledText
 from typing import Optional, Tuple
 
@@ -15,6 +17,19 @@ import requests
 from pathlib import Path
 
 from .config import Settings, apply_overrides, default_context_window_for, load_settings
+from .codex_oauth import (
+    build_authorization_url,
+    create_state,
+    delete_tokens,
+    exchange_authorization_code,
+    extract_chatgpt_account_id,
+    generate_pkce_pair,
+    load_tokens,
+    parse_authorization_input,
+    save_tokens,
+    start_local_callback_server,
+    wait_for_callback_code,
+)
 from .model_registry import DEFAULT_PROVIDER_MODELS, provider_model_slugs
 from .server import build_server, port_available
 from .logging_utils import resolve_log_level
@@ -53,7 +68,12 @@ class AdapterGUI:
         self._set_icon()
 
         provider, model_name = _parse_model(self.settings.model)
-        self.provider_display_map = {"LM Studio": "lmstudio", "Poe": "poe", "OpenRouter": "openrouter"}
+        self.provider_display_map = {
+            "LM Studio": "lmstudio",
+            "OpenAI Codex": "codex",
+            "Poe": "poe",
+            "OpenRouter": "openrouter",
+        }
         self.provider_value_to_display = {v: k for k, v in self.provider_display_map.items()}
         self.host_var = tk.StringVar(value=self.settings.host)
         self.port_var = tk.StringVar(value=str(self.settings.port))
@@ -71,6 +91,9 @@ class AdapterGUI:
         self.poe_key_var = tk.StringVar(value=self.settings.poe_api_key)
         self.openrouter_base_var = tk.StringVar(value=self.settings.openrouter_base)
         self.openrouter_key_var = tk.StringVar(value=self.settings.openrouter_key)
+        self.codex_base_var = tk.StringVar(value=self.settings.codex_base_url)
+        self.codex_auth_status_var = tk.StringVar(value=self._codex_status_text())
+        self.codex_auth_action_var = tk.StringVar(value=self._codex_action_text())
         self.http_proxy_var = tk.StringVar(value=self.settings.http_proxy)
         self.https_proxy_var = tk.StringVar(value=self.settings.https_proxy)
         self.all_proxy_var = tk.StringVar(value=self.settings.all_proxy)
@@ -95,6 +118,7 @@ class AdapterGUI:
         self.last_provider = self._current_provider()
         self.server_thread: Optional[threading.Thread] = None
         self.server_instance = None
+        self.codex_login_in_progress = False
         self.status_var = tk.StringVar(value="")
         self.max_log_lines = 2000
         self.log_queue: queue.Queue[str] = queue.Queue()
@@ -303,7 +327,39 @@ class AdapterGUI:
         return self.provider_value_to_display.get(provider_value.lower(), provider_value)
 
     def _config_path(self) -> Path:
+        override = os.getenv("CC_ADAPTER_CONFIG_DIR", "").strip()
+        if override:
+            return Path(override) / "gui.json"
         return Path(platformdirs.user_config_dir("cc-adapter")) / "gui.json"
+
+    def _codex_status_text(self) -> str:
+        tokens = load_tokens()
+        if not tokens:
+            return "Not logged in"
+        now_ms = int(time.time() * 1000)
+        remaining_s = max(0, (tokens.expires_at_ms - now_ms) // 1000)
+        mins = remaining_s // 60
+        account_id = extract_chatgpt_account_id(tokens.access)
+        suffix = f", {mins}m remaining" if remaining_s else ", expired"
+        if account_id:
+            return f"Logged in{suffix}"
+        return f"Logged in{suffix}"
+
+    def _codex_action_text(self) -> str:
+        if getattr(self, "codex_login_in_progress", False):
+            return "Logging in..."
+        return "Logout" if load_tokens() else "Login"
+
+    def _refresh_codex_status(self) -> None:
+        self.codex_auth_status_var.set(self._codex_status_text())
+        if hasattr(self, "codex_auth_action_var"):
+            self.codex_auth_action_var.set(self._codex_action_text())
+        if hasattr(self, "codex_auth_button"):
+            state = "disabled" if getattr(self, "codex_login_in_progress", False) else "normal"
+            try:
+                self.codex_auth_button.configure(state=state)
+            except Exception:
+                pass
 
     def _load_config_values(self) -> None:
         path = self._config_path()
@@ -333,6 +389,7 @@ class AdapterGUI:
         set_if("poe_api_key", self.poe_key_var)
         set_if("openrouter_base", self.openrouter_base_var)
         set_if("openrouter_api_key", self.openrouter_key_var)
+        set_if("codex_base_url", self.codex_base_var)
         set_if("http_proxy", self.http_proxy_var)
         set_if("https_proxy", self.https_proxy_var)
         set_if("all_proxy", self.all_proxy_var)
@@ -352,6 +409,8 @@ class AdapterGUI:
         display = self._provider_display(provider)
         if self.provider_var.get() != display:
             self.provider_var.set(display)
+        if provider == "codex":
+            self._refresh_codex_status()
         self._refresh_model_options()
         self._update_context_window_default(force=True)
         self._format_context_window_var()
@@ -427,6 +486,7 @@ class AdapterGUI:
             "poe_base_url": self.poe_base_var.get().strip() or settings.poe_base_url,
             "openrouter_key": self.openrouter_key_var.get().strip(),
             "openrouter_base": self.openrouter_base_var.get().strip() or settings.openrouter_base,
+            "codex_base_url": self.codex_base_var.get().strip() or settings.codex_base_url,
             "http_proxy": self.http_proxy_var.get().strip(),
             "https_proxy": self.https_proxy_var.get().strip(),
             "all_proxy": self.all_proxy_var.get().strip(),
@@ -490,9 +550,117 @@ class AdapterGUI:
         )
         self.provider_frames["openrouter"] = openrouter_frame
 
+        codex_frame = ttk.Frame(stack)
+        codex_frame.grid(row=0, column=0, sticky="nsew")
+        for i in range(2):
+            codex_frame.columnconfigure(i, weight=1)
+        ttk.Label(codex_frame, text="Base URL").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        ttk.Entry(codex_frame, textvariable=self.codex_base_var).grid(
+            row=0, column=1, sticky="ew", padx=4, pady=4
+        )
+        ttk.Label(codex_frame, text="OAuth status").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        status_row = ttk.Frame(codex_frame)
+        status_row.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
+        status_row.columnconfigure(0, weight=1)
+        ttk.Label(status_row, textvariable=self.codex_auth_status_var).grid(row=0, column=0, sticky="w")
+        self.codex_auth_button = ttk.Button(
+            status_row,
+            textvariable=self.codex_auth_action_var,
+            command=self._toggle_codex_auth,
+        )
+        self.codex_auth_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self.provider_frames["codex"] = codex_frame
+
         for frame in self.provider_frames.values():
             frame.grid_remove()
         self._update_provider_visibility()
+
+    def _codex_logout(self) -> None:
+        delete_tokens()
+        self._refresh_codex_status()
+        messagebox.showinfo("Codex OAuth", "Logged out (local tokens deleted).")
+
+    def _toggle_codex_auth(self) -> None:
+        if self.codex_login_in_progress:
+            return
+        if load_tokens() is None:
+            self._codex_login()
+        else:
+            self._codex_logout()
+
+    def _codex_login(self, on_success=None) -> None:
+        if self.codex_login_in_progress:
+            return
+        self.codex_login_in_progress = True
+        self._refresh_codex_status()
+
+        def finish(status: str, message: str) -> None:
+            self.codex_login_in_progress = False
+            self._refresh_codex_status()
+            if status == "ok":
+                messagebox.showinfo("Codex OAuth", message)
+                if on_success:
+                    try:
+                        on_success()
+                    except Exception:
+                        logging.exception("Codex post-login callback failed")
+            else:
+                messagebox.showerror("Codex OAuth", message)
+
+        def worker() -> None:
+            try:
+                verifier, challenge = generate_pkce_pair()
+                state = create_state()
+                url = build_authorization_url(state, challenge)
+
+                server = None
+                code = None
+                try:
+                    server = start_local_callback_server(state)
+                except OSError:
+                    server = None
+
+                webbrowser.open(url, new=1, autoraise=True)
+
+                if server:
+                    code = wait_for_callback_code(server, timeout_seconds=300)
+                    try:
+                        server.shutdown()
+                    except Exception:
+                        pass
+                    try:
+                        server.server_close()
+                    except Exception:
+                        pass
+
+                if not code:
+                    result: dict = {"raw": None}
+                    done = threading.Event()
+
+                    def ask() -> None:
+                        result["raw"] = simpledialog.askstring(
+                            "Codex OAuth",
+                            "Paste the full callback URL or authorization code (code#state supported):",
+                        )
+                        done.set()
+
+                    self.root.after(0, ask)
+                    done.wait(timeout=600)
+                    raw = (result.get("raw") or "").strip()
+                    code, returned_state = parse_authorization_input(raw)
+                    if not code:
+                        raise RuntimeError("No authorization code provided.")
+                    if returned_state and returned_state != state:
+                        raise RuntimeError("State mismatch.")
+
+                tokens = exchange_authorization_code(code=code, code_verifier=verifier)
+                save_tokens(tokens)
+                self.root.after(0, lambda: finish("ok", "Login successful."))
+            except Exception as exc:
+                msg = f"Login failed: {exc}"
+                self.root.after(0, lambda m=msg: finish("err", m))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _update_provider_visibility(self) -> None:
         selected = self._current_provider()
@@ -558,6 +726,7 @@ class AdapterGUI:
             "poe_api_key": self.poe_key_var.get(),
             "openrouter_base": self.openrouter_base_var.get().strip(),
             "openrouter_api_key": self.openrouter_key_var.get(),
+            "codex_base_url": self.codex_base_var.get().strip(),
             "http_proxy": self.http_proxy_var.get().strip(),
             "https_proxy": self.https_proxy_var.get().strip(),
             "all_proxy": self.all_proxy_var.get().strip(),
@@ -582,6 +751,37 @@ class AdapterGUI:
         except Exception:
             return default
 
+    def _control_host(self, host: str) -> str:
+        value = (host or "").strip()
+        if not value or value == "0.0.0.0":
+            return "127.0.0.1"
+        return value
+
+    def _try_shutdown_existing_adapter(self, host: str, port: int) -> bool:
+        control_host = self._control_host(host)
+        base_url = f"http://{control_host}:{port}"
+        try:
+            resp = requests.get(f"{base_url}/health", timeout=1.0)
+            if resp.status_code != 200:
+                return False
+            data = resp.json() if resp.content else {}
+            if not isinstance(data, dict) or data.get("status") != "ok":
+                return False
+        except Exception:
+            return False
+
+        try:
+            requests.post(f"{base_url}/shutdown", timeout=1.0)
+        except Exception:
+            return False
+
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if port_available(host, port):
+                return True
+            time.sleep(0.1)
+        return port_available(host, port)
+
     def start_server(self) -> None:
         if self.server_thread and self.server_thread.is_alive():
             return
@@ -590,6 +790,40 @@ class AdapterGUI:
         except ValueError as exc:
             messagebox.showerror("Invalid settings", str(exc))
             return
+
+        provider = self._current_provider()
+        if provider == "codex":
+            env_present = bool(
+                settings.codex_access_token
+                and settings.codex_refresh_token
+                and settings.codex_expires_at_ms > 0
+            )
+            file_present = load_tokens() is not None
+            if not (env_present or file_present):
+                self._set_status("Codex login required")
+                self._codex_login(on_success=self.start_server)
+                return
+
+        if not port_available(settings.host, settings.port):
+            if self._try_shutdown_existing_adapter(settings.host, settings.port):
+                logging.info(
+                    "Stopped existing adapter on %s:%s to free the port.",
+                    settings.host,
+                    settings.port,
+                )
+            else:
+                logging.error(
+                    "Port %s:%s is already in use. Stop the existing adapter or choose another port.",
+                    settings.host,
+                    settings.port,
+                )
+                self._set_status("Port in use")
+                self.start_stop_text.set("Start")
+                messagebox.showerror(
+                    "Port in use",
+                    f"Port {settings.host}:{settings.port} is already in use. Stop the existing adapter or choose another port.",
+                )
+                return
 
         if not port_available(settings.host, settings.port):
             logging.error(
@@ -671,8 +905,10 @@ class AdapterGUI:
                 detail = self._test_poe(settings, model)
             elif provider == "openrouter":
                 detail = self._test_openrouter(settings, model)
+            elif provider == "codex":
+                detail = self._test_codex(settings, model)
             else:
-                messagebox.showerror("Unsupported provider", provider)
+                messagebox.showerror("Unsupported provider", self._provider_display(provider))
                 return
         except Exception as exc:
             logging.exception("Provider test failed")
@@ -749,6 +985,47 @@ class AdapterGUI:
         resp.raise_for_status()
         data = resp.json()
         return f"HTTP {resp.status_code}"
+
+    def _test_codex(self, settings: Settings, model: str) -> str:
+        from .model_registry import canonicalize_model
+        from .providers import codex as codex_provider
+
+        model_name = model.split(":", 1)[1] if model.lower().startswith("codex:") else model
+        target_model = canonicalize_model("codex", model_name)
+
+        payload = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "stream": True,
+            "max_tokens": 16,
+        }
+
+        tokens, account_id = codex_provider._resolve_codex_auth(settings)
+        model_key = codex_provider._codex_model_key(settings, target_model)
+        body = codex_provider._request_body(payload, settings, model_key=model_key)
+
+        resp = requests.post(
+            settings.codex_base_url,
+            json=body,
+            headers=codex_provider._headers(account_id, tokens.access),
+            timeout=min(60.0, float(settings.lmstudio_timeout)),
+            proxies=settings.resolved_proxies(),
+            stream=True,
+        )
+        try:
+            resp.raise_for_status()
+            for line in resp.iter_lines(decode_unicode=False):
+                if not line:
+                    continue
+                if not line.startswith(b"data:"):
+                    continue
+                return f"HTTP {resp.status_code}"
+            return f"HTTP {resp.status_code}"
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
 
     def on_close(self) -> None:
         self._save_config_file(silent=True)

@@ -22,6 +22,11 @@ class Settings:
 
     openrouter_base: str = os.getenv("OPENROUTER_BASE", "https://openrouter.ai/api/v1/chat/completions")
     openrouter_key: str = os.getenv("OPENROUTER_API_KEY", "")
+    codex_base_url: str = os.getenv("CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex/responses")
+    codex_auth: str = os.getenv("CODEX_AUTH", "auto")
+    codex_access_token: str = os.getenv("OPENAI_CODEX_ACCESS_TOKEN", "")
+    codex_refresh_token: str = os.getenv("OPENAI_CODEX_REFRESH_TOKEN", "")
+    codex_expires_at_ms: int = int(os.getenv("OPENAI_CODEX_EXPIRES_AT_MS", "0"))
     http_proxy: str = os.getenv("HTTP_PROXY") or os.getenv("http_proxy") or ""
     https_proxy: str = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy") or ""
     all_proxy: str = os.getenv("ALL_PROXY") or os.getenv("all_proxy") or ""

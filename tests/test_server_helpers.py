@@ -1,8 +1,11 @@
 import json
 import os
 import socket
+import tempfile
 import unittest
 from unittest import mock
+
+os.environ["CC_ADAPTER_CONFIG_DIR"] = tempfile.mkdtemp(prefix="cc-adapter-tests-")
 
 from cc_adapter import streaming
 from cc_adapter.config import Settings
@@ -71,6 +74,32 @@ class ServerHelpersTestCase(unittest.TestCase):
         provider, name = resolve_provider_model("anthropic/claude-haiku-4.5", settings)
         self.assertEqual(provider, "lmstudio")
         self.assertEqual(name, "gpt-oss-120b")
+
+    def test_effective_codex_settings_maps_haiku_to_codex_mini(self):
+        settings = Settings(model="codex:gpt-5.2-xhigh")
+        effective, model = server._effective_codex_settings(settings, "claude-haiku-4.5", "gpt-5.2")
+        self.assertEqual(model, server.CODEX_HAIKU_FALLBACK_MODEL)
+        self.assertEqual(effective.model, f"codex:{server.CODEX_HAIKU_FALLBACK_MODEL}")
+
+    def test_effective_codex_settings_maps_haiku_to_codex_mini_codex_max(self):
+        settings = Settings(model="codex:gpt-5.1-codex-max-xhigh")
+        effective, model = server._effective_codex_settings(
+            settings, "claude-haiku-4-5-20251001", "gpt-5.1-codex-max"
+        )
+        self.assertEqual(model, server.CODEX_HAIKU_FALLBACK_MODEL)
+        self.assertEqual(effective.model, f"codex:{server.CODEX_HAIKU_FALLBACK_MODEL}")
+
+    def test_effective_codex_settings_noop_for_non_haiku(self):
+        settings = Settings(model="codex:gpt-5.2-xhigh")
+        effective, model = server._effective_codex_settings(settings, "claude-opus-4.5", "gpt-5.2")
+        self.assertEqual(model, "gpt-5.2")
+        self.assertEqual(effective.model, "codex:gpt-5.2-xhigh")
+
+    def test_effective_codex_settings_noop_when_not_codex(self):
+        settings = Settings(model="poe:claude-opus-4.5")
+        effective, model = server._effective_codex_settings(settings, "claude-haiku-4.5", "gpt-5.2")
+        self.assertEqual(model, "gpt-5.2")
+        self.assertEqual(effective.model, "poe:claude-opus-4.5")
 
     def test_available_models_reflect_keys(self):
         settings = Settings(

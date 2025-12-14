@@ -1,7 +1,41 @@
 from typing import Optional, Tuple
 
 from .config import Settings
-from .model_registry import canonicalize_model, find_model, provider_models
+from .codex_oauth import default_token_path
+from .model_registry import DEFAULT_PROVIDER_MODELS, canonicalize_model, find_model, provider_models
+
+
+def normalize_model_spec(model: Optional[str]) -> Optional[str]:
+    """
+    Normalize a CLI/env model spec.
+
+    Supports provider-only shorthands:
+    - "codex" or "codex:" -> "codex:<default>"
+    - "poe:" -> "poe:<default>"
+    """
+    if model is None:
+        return None
+    raw = str(model).strip()
+    if not raw:
+        return raw
+
+    normalized = raw.rstrip()
+    if normalized.endswith(":"):
+        provider = normalized[:-1].strip().lower()
+        default = DEFAULT_PROVIDER_MODELS.get(provider)
+        return f"{provider}:{default}" if default else raw
+
+    if ":" not in normalized and normalized.lower() in DEFAULT_PROVIDER_MODELS:
+        provider = normalized.lower()
+        return f"{provider}:{DEFAULT_PROVIDER_MODELS[provider]}"
+
+    if ":" in normalized:
+        provider, name = normalized.split(":", 1)
+        if not name.strip():
+            default = DEFAULT_PROVIDER_MODELS.get(provider.lower())
+            return f"{provider.lower()}:{default}" if default else raw
+
+    return raw
 
 
 def _display_slug(provider: str, name: str) -> str:
@@ -34,6 +68,22 @@ def available_models(settings: Settings) -> list[str]:
 
     # Include known provider offerings gated by available credentials.
     eligible: list[Tuple[int, str, str]] = []
+    codex_env_present = bool(
+        settings.codex_access_token
+        and settings.codex_refresh_token
+        and settings.codex_expires_at_ms > 0
+    )
+    codex_file_present = default_token_path().exists()
+    codex_auth = str(getattr(settings, "codex_auth", "") or "").strip().lower()
+    if codex_auth in {"env", "token", "tokens"}:
+        codex_tokens_present = codex_env_present
+    elif codex_auth in {"oauth", "login", "file", "stored"}:
+        codex_tokens_present = codex_file_present
+    else:
+        codex_tokens_present = codex_env_present or codex_file_present
+    if codex_tokens_present:
+        for info in provider_models("codex"):
+            eligible.append((info.priority, info.provider, info.slug))
     if settings.poe_api_key:
         for info in provider_models("poe"):
             eligible.append((info.priority, info.provider, info.slug))
@@ -57,7 +107,7 @@ def resolve_provider_model(model: Optional[str], settings: Settings) -> Tuple[st
 
     default_provider, default_name = default_model.split(":", 1)
     default_provider = default_provider.lower()
-    if default_provider not in {"poe", "lmstudio", "openrouter"}:
+    if default_provider not in {"poe", "lmstudio", "openrouter", "codex"}:
         raise ValueError(f"Unsupported provider prefix: {default_provider}")
 
     requested = (model or "").strip()
