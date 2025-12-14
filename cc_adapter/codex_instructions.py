@@ -16,7 +16,7 @@ ModelFamily = Literal["codex-max", "codex", "gpt-5.2", "gpt-5.1"]
 GITHUB_API_RELEASES = "https://api.github.com/repos/openai/codex/releases/latest"
 GITHUB_HTML_RELEASES = "https://github.com/openai/codex/releases/latest"
 
-# These map to Codex CLI prompt selection (see ref/opencode-openai-codex-auth).
+# These map to Codex CLI prompt selection
 PROMPT_FILES: Dict[ModelFamily, str] = {
     "codex-max": "gpt-5.1-codex-max_prompt.md",
     "codex": "gpt_5_codex_prompt.md",

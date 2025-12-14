@@ -146,6 +146,19 @@ class CodexTransformTestCase(unittest.TestCase):
         self.assertEqual(body["reasoning"]["summary"], "detailed")
         self.assertEqual(body["text"]["verbosity"], "medium")
         self.assertIs(body["store"], False)
+        self.assertNotIn("reasoning.encrypted_content", body.get("include", []))
+
+    def test_request_body_can_opt_in_to_encrypted_reasoning(self):
+        from cc_adapter.config import Settings
+
+        payload = {
+            "model": "gpt-5.2",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        }
+        settings = Settings(lmstudio_timeout=1, codex_include_encrypted_reasoning="on")
+        with mock.patch.object(codex, "get_codex_instructions", return_value="codex-cli-prompt"):
+            body = codex._request_body(payload, settings, model_key="codex:gpt-5.2-high")
         self.assertIn("reasoning.encrypted_content", body.get("include", []))
 
     def test_request_body_includes_reasoning_summary_and_text_defaults(self):

@@ -1,6 +1,8 @@
 import json
 from typing import Any, Dict, List, Optional, Set
 
+from .codex_tool_remap import remap_codex_tool_call
+
 
 def _flatten_text(content: Any) -> str:
     if isinstance(content, str):
@@ -399,14 +401,37 @@ def openai_to_anthropic(
             )
 
         for call in message.get("tool_calls") or []:
-            blocks.append(
-                {
-                    "type": "tool_use",
-                    "id": call.get("id") or call.get("function", {}).get("name", "tool"),
-                    "name": (call.get("function") or {}).get("name") or "tool",
-                    "input": _parse_arguments((call.get("function") or {}).get("arguments")),
-                }
-            )
+            call_id = call.get("id") or call.get("function", {}).get("name", "tool")
+            tool_name = (call.get("function") or {}).get("name") or "tool"
+            tool_args = (call.get("function") or {}).get("arguments")
+            try:
+                remapped = remap_codex_tool_call(
+                    call_id=str(call_id),
+                    name=str(tool_name),
+                    arguments=tool_args,
+                    incoming=original_request,
+                )
+            except Exception:
+                remapped = None
+            if remapped:
+                for new_id, new_name, new_input in remapped:
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": new_id,
+                            "name": new_name,
+                            "input": new_input,
+                        }
+                    )
+            else:
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": call_id,
+                        "name": tool_name,
+                        "input": _parse_arguments(tool_args),
+                    }
+                )
 
         if idx > 0:
             all_blocks.append({"type": "text", "text": f"[alternative choice {idx}]"})

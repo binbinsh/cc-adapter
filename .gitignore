@@ -1,24 +1,17 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.so
 .venv/
-.mypy_cache/
 .pytest_cache/
-.ruff_cache/
 *.egg-info/
 build/
 dist/
+vendors/
 uv.lock
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
 
 # Misc
 .env

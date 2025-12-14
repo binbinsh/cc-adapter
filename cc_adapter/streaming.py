@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any, Dict, Optional, Tuple
 from http.server import BaseHTTPRequestHandler
+from .codex_tool_remap import remap_codex_tool_call
 from .logging_utils import log_payload
 
 
@@ -457,11 +458,23 @@ def stream_responses_response(
     thinking_index = 0
     text_index = 0
     tool_blocks: Dict[str, Tuple[int, list]] = {}
-    tool_item_to_call: Dict[str, str] = {}
-    tool_call_names: Dict[str, str] = {}
+    pending_calls: Dict[str, Dict[str, Any]] = {}
+    item_id_to_call_id: Dict[str, str] = {}
     next_index = 0
     usage_state = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
     output_char_count = 0
+
+    def _normalize_function_call_arguments(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            if not value.strip():
+                return None
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
 
     def open_text_block():
         nonlocal text_block_open, text_index, next_index
@@ -531,6 +544,57 @@ def stream_responses_response(
                 },
             )
         return tool_blocks[call_id]
+
+    def _emit_pending_tool_call(call_id: str) -> None:
+        info = pending_calls.get(call_id)
+        if not isinstance(info, dict) or info.get("emitted"):
+            return
+        info["emitted"] = True
+
+        name = str(info.get("name") or "tool")
+        arguments = info.get("arguments")
+        if arguments is None:
+            parts = info.get("args_parts")
+            if isinstance(parts, list) and parts:
+                arguments = "".join([str(p) for p in parts if p is not None])
+            else:
+                arguments = "{}"
+
+        try:
+            remapped = remap_codex_tool_call(
+                call_id=str(call_id),
+                name=name,
+                arguments=arguments,
+                incoming=incoming,
+            )
+        except Exception:
+            remapped = None
+
+        if remapped:
+            for new_id, new_name, new_input in remapped:
+                idx, buffer = get_tool_block(str(new_id), str(new_name))
+                payload = json.dumps(new_input, ensure_ascii=False)
+                buffer[:] = [payload]
+                _send(
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": idx,
+                        "delta": {"type": "input_json_delta", "partial_json": "".join(buffer)},
+                    },
+                )
+            return
+
+        idx, buffer = get_tool_block(str(call_id), name)
+        buffer[:] = [str(arguments)]
+        _send(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": idx,
+                "delta": {"type": "input_json_delta", "partial_json": "".join(buffer)},
+            },
+        )
 
     def _ensure_started(event_obj: Dict[str, Any]) -> None:
         nonlocal sent_start
@@ -623,83 +687,47 @@ def stream_responses_response(
                     item_id = item.get("id") or ""
                     call_id = item.get("call_id") or item_id or "tool_call"
                     name = item.get("name") or "tool"
-                    tool_item_to_call[str(item_id)] = str(call_id)
-                    tool_call_names[str(call_id)] = str(name)
-                    idx, buffer = get_tool_block(str(call_id), str(name))
-                    args = item.get("arguments")
-                    if args:
-                        buffer.append(str(args))
-                        _send(
-                            "content_block_delta",
-                            {
-                                "type": "content_block_delta",
-                                "index": idx,
-                                "delta": {
-                                    "type": "input_json_delta",
-                                    "partial_json": "".join(buffer),
-                                },
-                            },
-                        )
+                    item_id_to_call_id[str(item_id)] = str(call_id)
+                    pending_calls[str(call_id)] = {
+                        "name": str(name),
+                        "args_parts": [],
+                        "arguments": _normalize_function_call_arguments(item.get("arguments")),
+                        "emitted": False,
+                    }
+                    if pending_calls[str(call_id)]["arguments"] is not None:
+                        _emit_pending_tool_call(str(call_id))
             elif etype == "response.function_call_arguments.delta":
                 item_id = str(event_obj.get("item_id") or "")
-                call_id = tool_item_to_call.get(item_id) or item_id or "tool_call"
-                name = tool_call_names.get(call_id) or "tool"
                 delta = event_obj.get("delta") or ""
                 if delta:
-                    idx, buffer = get_tool_block(call_id, name)
-                    buffer.append(str(delta))
-                    _send(
-                        "content_block_delta",
-                        {
-                            "type": "content_block_delta",
-                            "index": idx,
-                            "delta": {
-                                "type": "input_json_delta",
-                                "partial_json": "".join(buffer),
-                            },
-                        },
-                    )
+                    call_id = item_id_to_call_id.get(item_id) or item_id or "tool_call"
+                    if call_id not in pending_calls:
+                        pending_calls[call_id] = {"name": "tool", "args_parts": [], "arguments": None, "emitted": False}
+                    parts = pending_calls[call_id].setdefault("args_parts", [])
+                    if isinstance(parts, list):
+                        parts.append(str(delta))
             elif etype == "response.function_call_arguments.done":
                 item_id = str(event_obj.get("item_id") or "")
-                call_id = tool_item_to_call.get(item_id) or item_id or "tool_call"
-                name = tool_call_names.get(call_id) or "tool"
-                args = event_obj.get("arguments")
-                if args is not None:
-                    idx, buffer = get_tool_block(call_id, name)
-                    buffer[:] = [str(args)]
-                    _send(
-                        "content_block_delta",
-                        {
-                            "type": "content_block_delta",
-                            "index": idx,
-                            "delta": {"type": "input_json_delta", "partial_json": "".join(buffer)},
-                        },
-                    )
+                call_id = item_id_to_call_id.get(item_id) or item_id or "tool_call"
+                if call_id not in pending_calls:
+                    pending_calls[call_id] = {"name": "tool", "args_parts": [], "arguments": None, "emitted": False}
+                pending_calls[call_id]["arguments"] = _normalize_function_call_arguments(event_obj.get("arguments"))
+                _emit_pending_tool_call(call_id)
             elif etype == "response.output_item.done":
                 item = event_obj.get("item") or {}
                 if isinstance(item, dict) and item.get("type") == "function_call":
                     item_id = str(item.get("id") or "")
-                    call_id = str(item.get("call_id") or tool_item_to_call.get(item_id) or item_id or "tool_call")
-                    name = str(item.get("name") or tool_call_names.get(call_id) or "tool")
-                    tool_item_to_call[item_id] = call_id
-                    tool_call_names[call_id] = name
-                    args = item.get("arguments")
-                    if args is not None:
-                        idx, buffer = get_tool_block(call_id, name)
-                        if "".join(buffer) != str(args):
-                            buffer[:] = [str(args)]
-                            _send(
-                                "content_block_delta",
-                                {
-                                    "type": "content_block_delta",
-                                    "index": idx,
-                                    "delta": {
-                                        "type": "input_json_delta",
-                                        "partial_json": "".join(buffer),
-                                    },
-                                },
-                            )
+                    call_id = str(item.get("call_id") or item_id_to_call_id.get(item_id) or item_id or "tool_call")
+                    item_id_to_call_id[item_id] = call_id
+                    if call_id not in pending_calls:
+                        pending_calls[call_id] = {"name": str(item.get("name") or "tool"), "args_parts": [], "arguments": None, "emitted": False}
+                    if item.get("name"):
+                        pending_calls[call_id]["name"] = str(item.get("name") or "tool")
+                    pending_calls[call_id]["arguments"] = _normalize_function_call_arguments(item.get("arguments")) or pending_calls[call_id].get("arguments")
+                    _emit_pending_tool_call(call_id)
             elif etype in ("response.completed", "response.done", "response.finished", "response.failed"):
+                for cid in list(pending_calls.keys()):
+                    _emit_pending_tool_call(cid)
                 _ingest_usage(event_obj)
                 close_text_block()
                 close_thinking_block()

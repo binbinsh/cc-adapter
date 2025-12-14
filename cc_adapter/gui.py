@@ -32,7 +32,7 @@ from .codex_oauth import (
 )
 from .model_registry import DEFAULT_PROVIDER_MODELS, provider_model_slugs
 from .server import build_server, port_available
-from .logging_utils import resolve_log_level
+from .logging_utils import file_handler_from_env, resolve_log_level
 
 
 class LogQueueHandler(logging.Handler):
@@ -142,6 +142,9 @@ class AdapterGUI:
         root_logger = logging.getLogger()
         root_logger.handlers.clear()
         root_logger.addHandler(self.log_handler)
+        file_handler = file_handler_from_env()
+        if file_handler is not None:
+            root_logger.addHandler(file_handler)
         self._apply_log_level()
         logging.getLogger("cc-adapter").propagate = True
 

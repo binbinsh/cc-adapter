@@ -73,9 +73,32 @@ class ResponsesStreamingBridgeTestCase(unittest.TestCase):
         self.assertIn("\"id\": \"call_1\"", body)
         self.assertIn("\"name\": \"do_it\"", body)
         self.assertIn("input_json_delta", body)
+        self.assertIn("\\\"x\\\":1", body)
+        self.assertIn("\"stop_reason\": \"tool_use\"", body)
+
+    def test_streaming_tool_call_arguments_from_output_item_done(self):
+        handler = DummyHandler()
+        resp = DummyResponse(
+            [
+                b'data: {"type":"response.created","response_id":"resp_3"}',
+                b'data: {"type":"response.output_item.added","response_id":"resp_3","output_index":0,"item":{"type":"function_call","id":"fc_2","call_id":"call_2","name":"do_it","arguments":""}}',
+                b'data: {"type":"response.output_item.done","response_id":"resp_3","output_index":0,"item":{"type":"function_call","id":"fc_2","call_id":"call_2","name":"do_it","arguments":"{\\\"x\\\":1}"}}',
+                b'data: {"type":"response.completed","response":{"id":"resp_3","usage":{"input_tokens":3,"output_tokens":1}}}',
+            ]
+        )
+        logger = logging.getLogger("responses-tool-done-test")
+        logger.setLevel(logging.CRITICAL)
+
+        streaming.stream_responses_response(resp, "codex:gpt-5.1-codex", {}, handler, logger)
+
+        body = handler.buffer.decode("utf-8")
+        self.assertIn("\"type\": \"tool_use\"", body)
+        self.assertIn("\"id\": \"call_2\"", body)
+        self.assertIn("\"name\": \"do_it\"", body)
+        self.assertIn("input_json_delta", body)
+        self.assertIn("\\\"x\\\":1", body)
         self.assertIn("\"stop_reason\": \"tool_use\"", body)
 
 
 if __name__ == "__main__":
     unittest.main()
-

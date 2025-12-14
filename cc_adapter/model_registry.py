@@ -67,7 +67,7 @@ MODEL_ENTRIES: Tuple[ModelInfo, ...] = (
         context_window=400_000,
         priority=40,
     ),
-    # Codex presets (mirrors ref/opencode-openai-codex-auth/config/full-opencode.json)
+    # Codex presets
     ModelInfo(
         provider="codex",
         slug="gpt-5.2-low",

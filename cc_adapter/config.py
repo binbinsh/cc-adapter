@@ -27,6 +27,10 @@ class Settings:
     codex_access_token: str = os.getenv("OPENAI_CODEX_ACCESS_TOKEN", "")
     codex_refresh_token: str = os.getenv("OPENAI_CODEX_REFRESH_TOKEN", "")
     codex_expires_at_ms: int = int(os.getenv("OPENAI_CODEX_EXPIRES_AT_MS", "0"))
+    codex_include_encrypted_reasoning: str = os.getenv("CODEX_INCLUDE_ENCRYPTED_REASONING", "off")
+    codex_bridge: str = os.getenv("CODEX_BRIDGE", "auto")
+    codex_bridge_prompt_file: str = os.getenv("CODEX_BRIDGE_PROMPT_FILE", "")
+    codex_bridge_strip_system: str = os.getenv("CODEX_BRIDGE_STRIP_SYSTEM", "auto")
     http_proxy: str = os.getenv("HTTP_PROXY") or os.getenv("http_proxy") or ""
     https_proxy: str = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy") or ""
     all_proxy: str = os.getenv("ALL_PROXY") or os.getenv("all_proxy") or ""

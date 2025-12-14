@@ -1,11 +1,18 @@
 import copy
 import logging
 import json
+import threading
 from http.server import BaseHTTPRequestHandler
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from ..codex_bridge import (
+    build_claude_code_bridge_prompt,
+    load_bridge_prompt,
+    should_inject_bridge,
+    split_system_prompt,
+)
 from ..codex_instructions import get_codex_instructions
 from ..codex_oauth import (
     CodexOAuthTokens,
@@ -31,9 +38,23 @@ ORIGINATOR_VALUE = "codex_cli_rs"
 _CODEX_GLOBAL_DEFAULTS: Dict[str, Any] = {
     "reasoning": {"effort": "medium", "summary": "auto"},
     "text": {"verbosity": "medium"},
-    "include": ["reasoning.encrypted_content"],
     "store": False,
 }
+
+_SESSION_LOCAL = threading.local()
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "always"}
+
+
+def _session() -> requests.Session:
+    existing = getattr(_SESSION_LOCAL, "session", None)
+    if isinstance(existing, requests.Session):
+        return existing
+    created = requests.Session()
+    _SESSION_LOCAL.session = created
+    return created
 
 
 def _codex_model_key(settings: Settings, target_model: str) -> str:
@@ -388,15 +409,44 @@ def _request_body(
         force_refresh=force_refresh_instructions,
     )
 
-    if developer_prompt:
-        input_items = [
+    kept_system, extracted_instructions = split_system_prompt(
+        developer_prompt, getattr(settings, "codex_bridge_strip_system", "auto")
+    )
+
+    developer_messages: List[Dict[str, Any]] = []
+    if should_inject_bridge(getattr(settings, "codex_bridge", "auto"), payload.get("tools")):
+        bridge = load_bridge_prompt(getattr(settings, "codex_bridge_prompt_file", ""))
+        if not bridge.strip():
+            bridge = build_claude_code_bridge_prompt(payload.get("tools"))
+        if bridge.strip():
+            developer_messages.append(
+                {
+                    "type": "message",
+                    "role": "developer",
+                    "content": [{"type": "input_text", "text": bridge.strip()}],
+                }
+            )
+
+    if extracted_instructions.strip():
+        developer_messages.append(
             {
                 "type": "message",
                 "role": "developer",
-                "content": [{"type": "input_text", "text": developer_prompt}],
-            },
-            *input_items,
-        ]
+                "content": [{"type": "input_text", "text": extracted_instructions.strip()}],
+            }
+        )
+
+    if kept_system.strip():
+        developer_messages.append(
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": kept_system.strip()}],
+            }
+        )
+
+    if developer_messages:
+        input_items = [*developer_messages, *input_items]
 
     body: Dict[str, Any] = {
         "model": payload.get("model") or "",
@@ -404,13 +454,22 @@ def _request_body(
         "stream": True,
         "instructions": instructions,
         "input": input_items,
-        "include": ["reasoning.encrypted_content"],
     }
 
-    if isinstance(model_defaults.get("include"), list) and model_defaults.get("include"):
-        body["include"] = model_defaults.get("include")
-    if isinstance(payload.get("include"), list) and payload.get("include"):
-        body["include"] = payload.get("include")
+    include: List[str] = []
+    if isinstance(model_defaults.get("include"), list):
+        include = [str(v) for v in (model_defaults.get("include") or []) if isinstance(v, str) and str(v).strip()]
+    if isinstance(payload.get("include"), list):
+        include = [str(v) for v in (payload.get("include") or []) if isinstance(v, str) and str(v).strip()]
+
+    if _truthy(getattr(settings, "codex_include_encrypted_reasoning", "")):
+        if "reasoning.encrypted_content" not in include:
+            include.append("reasoning.encrypted_content")
+    else:
+        include = [v for v in include if v != "reasoning.encrypted_content"]
+
+    if include:
+        body["include"] = include
 
     # ChatGPT Codex backend rejects sampling parameters such as temperature/top_p.
 
@@ -461,7 +520,7 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str) -> Dict
     body = _request_body(req_payload, settings, model_key=model_key)
     log_payload(logger, f"Codex request -> {target_model}", body)
 
-    resp = requests.post(
+    resp = _session().post(
         settings.codex_base_url,
         json=body,
         headers=_headers(account_id, tokens.access),
@@ -480,7 +539,7 @@ def send(payload: Dict[str, Any], settings: Settings, target_model: str) -> Dict
                 pass
             logger.warning("Codex backend rejected instructions; refreshing and retrying once.")
             body = _request_body(req_payload, settings, model_key=model_key, force_refresh_instructions=True)
-            resp = requests.post(
+            resp = _session().post(
                 settings.codex_base_url,
                 json=body,
                 headers=_headers(account_id, tokens.access),
@@ -532,7 +591,7 @@ def stream(
     body = _request_body(req_payload, settings, model_key=model_key)
     log_payload(logger, f"Codex stream request -> {requested_model}", body)
 
-    resp = requests.post(
+    resp = _session().post(
         settings.codex_base_url,
         json=body,
         headers=_headers(account_id, tokens.access),
@@ -551,7 +610,7 @@ def stream(
                 pass
             logger.warning("Codex backend rejected instructions; refreshing and retrying once.")
             body = _request_body(req_payload, settings, model_key=model_key, force_refresh_instructions=True)
-            resp = requests.post(
+            resp = _session().post(
                 settings.codex_base_url,
                 json=body,
                 headers=_headers(account_id, tokens.access),

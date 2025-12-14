@@ -21,12 +21,8 @@ from .models import available_models, normalize_model_spec, resolve_provider_mod
 from .converters import anthropic_to_openai, openai_to_anthropic
 from .providers import lmstudio, poe, openrouter, codex
 from . import streaming
-from .logging_utils import log_payload, resolve_log_level
+from .logging_utils import configure_root_logging, log_payload
 
-logging.basicConfig(
-    level=resolve_log_level(os.getenv("LOG_LEVEL", "INFO")),
-    format="%(asctime)s %(levelname)s %(message)s",
-)
 logger = logging.getLogger("cc-adapter")
 
 CODEX_HAIKU_FALLBACK_MODEL = "gpt-5.1-codex-mini"
@@ -403,6 +399,7 @@ def _ensure_codex_login_if_needed(settings: Settings, no_browser: bool, allow_in
 
 
 def main():
+    configure_root_logging()
     parser = argparse.ArgumentParser(description="LM Studio / Poe / OpenRouter / OpenAI Codex adapter")
     parser.add_argument("--host", default=os.getenv("ADAPTER_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("ADAPTER_PORT", "8005")))
