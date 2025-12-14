@@ -8,18 +8,18 @@ cc-adapter lets Claude Code speak Anthropic `/v1/messages` to Poe, OpenRouter, O
 ## Tested models (quick list)
 Choose one of these thoroughly tested models:
 
-- **`codex:gpt-5.2-xhigh` (requires OpenAI Codex Subscription)**
 - **`poe:claude-opus-4.5` (best quality; requires Poe key)**
 - `poe:claude-sonnet-4.5` (requires Poe key)
 - **`poe:deepseek-v3.2` (best value for money; requires Poe key)**
 - `poe:glm-4.6` (requires Poe key)
+- `poe:gpt-5.2-pro` (requires Poe key; **extremely expensive!**)
 - `openrouter:claude-sonnet-4.5` (requires OpenRouter key)
 - `openrouter:claude-opus-4.5` (requires OpenRouter key)
 - `openrouter:gpt-5.2` (requires OpenRouter key)
 - `openrouter:glm-4.6` (requires OpenRouter key)
-- `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
-- `poe:gpt-5.2-pro` (requires Poe key; **extremely expensive!**)
 - `openrouter:gpt-5.2-pro` (requires OpenRouter key; **extremely expensive!**)
+- **`codex:gpt-5.1-codex-max-xhigh` (requires OpenAI Codex Subscription)**
+- `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
 
 ## Install from PyPI (recommended)
 Quickest way to get cc-adapter:
