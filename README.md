@@ -61,31 +61,6 @@ GUI: choose provider `OpenAI Codex`, then click `Login` and `Start`.
 
 <img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot-02.png" alt="CC Adapter GUI" width="800">
 
-## Quick start (minimal CLI)
-Run the recommended Poe model and point Claude Code to the adapter:
-
-```bash
-uv run cc-adapter --host 127.0.0.1 --port 8005 \
-  --model poe:claude-opus-4.5 \
-  --poe-api-key YOUR_POE_API_KEY \
-  --daemon
-
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8005
-export ANTHROPIC_AUTH_TOKEN=dummy
-export ANTHROPIC_API_KEY=
-export NO_PROXY=127.0.0.1
-export DISABLE_TELEMETRY=true
-export DISABLE_COST_WARNINGS=true
-export API_TIMEOUT_MS=600000
-export CLAUDE_CODE_USE_BEDROCK=
-claude
-```
-
-Notes:
-- `--host` defaults to `127.0.0.1`; only use `0.0.0.0` if you must expose it.
-- Change `--port` if 8005 is taken.
-- Swap `--model` for any model from the provider.
-
 ## CLI examples
 The CLI accepts any provider-prefixed model string (e.g., `poe:any-model-name`); the GUI offers a curated drop-down list. Common flags: `--host` (default 127.0.0.1), `--port` (default 8005), plus provider-specific API keys.
 
