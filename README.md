@@ -8,6 +8,7 @@ cc-adapter lets Claude Code speak Anthropic `/v1/messages` to Poe, OpenRouter, *
 ## Tested models (quick list)
 Choose one of these thoroughly tested models:
 
+- **`codex:gpt-5.2-medium` (requires OpenAI Codex Subscription)**
 - **`poe:claude-opus-4.5` (best quality; requires Poe key)**
 - `poe:claude-sonnet-4.5` (requires Poe key)
 - **`poe:deepseek-v3.2` (best value for money; requires Poe key)**
@@ -18,7 +19,6 @@ Choose one of these thoroughly tested models:
 - `openrouter:gpt-5.2` (requires OpenRouter key)
 - `openrouter:glm-4.6` (requires OpenRouter key)
 - `openrouter:gpt-5.2-pro` (requires OpenRouter key; **extremely expensive!**)
-- **`codex:gpt-5.2-xhigh` (requires OpenAI Codex Subscription)**
 - `lmstudio:gpt-oss-120b` (requires LM Studio + gpt-oss-120b)
 
 ## Install from PyPI (recommended)
@@ -50,19 +50,21 @@ Set provider/model/API keys in the window, then use `Test Provider` and `Start/S
 
 ## OpenAI Codex (ChatGPT OAuth)
 
-This provider uses **ChatGPT OAuth** (subscription-based) to call the Codex backend. You do **not** need an `OPENAI_API_KEY`.
+This provider uses **ChatGPT subscription** to call the Codex backend. You do **not** need an `OPENAI_API_KEY`.
 
+### CLI
 ```bash
 cc-adapter-codex-login
-uv run cc-adapter --model codex:gpt-5.1-codex-mini
+uv run cc-adapter --model codex:gpt-5.2-medium
 ```
 
-GUI: choose provider `OpenAI Codex`, then click `Login` and `Start`.
+### GUI
+choose provider `OpenAI Codex`, then click `Login` and `Start`.
 
 <img src="https://raw.githubusercontent.com/binbinsh/cc-adapter/main/screenshot-02.png" alt="CC Adapter GUI" width="800">
 
-## CLI examples
-The CLI accepts any provider-prefixed model string (e.g., `poe:any-model-name`); the GUI offers a curated drop-down list. Common flags: `--host` (default 127.0.0.1), `--port` (default 8005), plus provider-specific API keys.
+## CLI (recommended for remote host)
+The GUI offers a curated drop-down list. But the CLI accepts any provider-prefixed model string (e.g., `poe:any-model-name`); Common flags: `--host` (default 127.0.0.1), `--port` (default 8005), plus provider-specific API keys.
 
 ### Poe
 ```bash
